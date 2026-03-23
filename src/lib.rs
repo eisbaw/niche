@@ -1,5 +1,6 @@
 pub mod computed;
 pub mod config;
+pub mod link;
 pub mod render;
 
 use std::path::Path;
@@ -10,6 +11,7 @@ pub enum PipelineError {
     Config(config::PostConfigError),
     Render(render::RenderError),
     Computed(computed::ComputedError),
+    Link(link::LinkError),
 }
 
 impl std::fmt::Display for PipelineError {
@@ -18,6 +20,7 @@ impl std::fmt::Display for PipelineError {
             Self::Config(e) => write!(f, "{e}"),
             Self::Render(e) => write!(f, "{e}"),
             Self::Computed(e) => write!(f, "{e}"),
+            Self::Link(e) => write!(f, "{e}"),
         }
     }
 }
@@ -41,6 +44,14 @@ impl From<computed::ComputedError> for PipelineError {
         Self::Computed(e)
     }
 }
+
+impl From<link::LinkError> for PipelineError {
+    fn from(e: link::LinkError) -> Self {
+        Self::Link(e)
+    }
+}
+
+pub use link::run_link;
 
 /// Run the full render pipeline: read config + content, produce content.html and computed.json.
 ///
