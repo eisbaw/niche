@@ -4,6 +4,7 @@ use std::process;
 use clap::{Parser, Subcommand};
 
 mod config;
+mod render;
 
 #[derive(Parser)]
 #[command(name = "post2html", about = "Static site generator pipeline")]
@@ -84,17 +85,30 @@ fn main() {
             content,
             out,
         } => {
-            let post_config = match config::PostConfig::from_file(config) {
+            let _post_config = match config::PostConfig::from_file(config) {
                 Ok(c) => c,
                 Err(e) => {
                     eprintln!("Error: {e}");
                     process::exit(1);
                 }
             };
-            println!("render: config={} content={} out={}", config.display(), content.display(), out.display());
-            println!("  slug={} title={:?} date={}", post_config.slug, post_config.title, post_config.date);
-            if !post_config.extra.is_empty() {
-                println!("  extra keys: {:?}", post_config.extra.keys().collect::<Vec<_>>());
+
+            let html = match render::render_file(content) {
+                Ok(h) => h,
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    process::exit(1);
+                }
+            };
+
+            match render::write_html(&html, out) {
+                Ok(path) => {
+                    println!("{}", path.display());
+                }
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    process::exit(1);
+                }
             }
         }
         Command::Link {
