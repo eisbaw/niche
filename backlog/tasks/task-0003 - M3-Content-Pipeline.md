@@ -1,9 +1,10 @@
 ---
 id: TASK-0003
 title: 'M3: Content Pipeline'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 22:03'
+updated_date: '2026-03-23 23:08'
 labels:
   - milestone
 dependencies:

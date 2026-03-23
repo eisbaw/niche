@@ -18,6 +18,34 @@ static CODE_BLOCK_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
 
+/// Regex to extract the content between `<body>` and `</body>` tags.
+/// Used to strip the full HTML document wrapper produced by rst2html5.
+static BODY_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?si)<body>(.*)</body>").unwrap());
+
+/// Content format detected from file extension.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContentFormat {
+    Markdown,
+    Rst,
+    Html,
+    Txt,
+}
+
+/// Detect content format from a file extension.
+///
+/// Returns `Ok(ContentFormat)` for recognized extensions (.md, .rst, .html, .txt),
+/// or `Err(RenderError::UnsupportedFormat)` for anything else.
+pub fn detect_format(path: &Path) -> Result<ContentFormat, RenderError> {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("md") => Ok(ContentFormat::Markdown),
+        Some("rst") => Ok(ContentFormat::Rst),
+        Some("html") | Some("htm") => Ok(ContentFormat::Html),
+        Some("txt") => Ok(ContentFormat::Txt),
+        Some(ext) => Err(RenderError::UnsupportedFormat(ext.to_string())),
+        None => Err(RenderError::UnsupportedFormat("(no extension)".to_string())),
+    }
+}
+
 /// Render markdown content to an HTML fragment.
 ///
 /// Enables GFM extensions (tables, autolinks, strikethrough, task lists),
@@ -41,6 +69,93 @@ pub fn render_markdown(markdown: &str) -> String {
     let html = markdown_to_html(markdown, &options);
     let html = highlight_code_blocks(&html);
     replace_wikilinks(&html)
+}
+
+/// Render RST content to an HTML fragment by shelling out to `rst2html5`.
+///
+/// Passes the file path to `rst2html5`, captures stdout, and extracts the
+/// `<body>` content (stripping the full HTML document wrapper).
+/// Wiki-link replacement is applied to the output.
+fn render_rst(path: &Path) -> Result<String, RenderError> {
+    // Check that rst2html5 is on PATH before attempting to run it.
+    let which = std::process::Command::new("which")
+        .arg("rst2html5")
+        .output();
+    match which {
+        Ok(output) if output.status.success() => {}
+        _ => return Err(RenderError::Rst2HtmlNotFound),
+    }
+
+    let output = std::process::Command::new("rst2html5")
+        .arg(path)
+        .output()
+        .map_err(|e| RenderError::RstFailed(format!("failed to execute rst2html5: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(RenderError::RstFailed(format!(
+            "rst2html5 exited with {}: {stderr}",
+            output.status
+        )));
+    }
+
+    let full_html = String::from_utf8_lossy(&output.stdout);
+    let body_content = extract_body(&full_html);
+    Ok(replace_wikilinks(&body_content))
+}
+
+/// Extract content between `<body>` and `</body>` tags.
+/// If no body tags are found, returns the input as-is (trimmed).
+fn extract_body(html: &str) -> String {
+    match BODY_RE.captures(html) {
+        Some(caps) => caps[1].trim().to_string(),
+        None => html.trim().to_string(),
+    }
+}
+
+/// Render HTML content as passthrough -- already HTML, just apply wiki-link replacement.
+fn render_html_passthrough(content: &str) -> String {
+    replace_wikilinks(content)
+}
+
+/// Render plain text by wrapping in a `<pre class="plaintext">` tag.
+/// Wiki-link replacement is applied to the output.
+fn render_txt(content: &str) -> String {
+    let escaped = html_escape(content);
+    let wrapped = format!("<pre class=\"plaintext\">{escaped}</pre>");
+    replace_wikilinks(&wrapped)
+}
+
+/// Read a content file and render it to an HTML fragment.
+///
+/// Detects the format from the file extension and dispatches to the
+/// appropriate renderer:
+/// - `.md` -> markdown rendering
+/// - `.rst` -> RST rendering via rst2html5
+/// - `.html` -> passthrough (content is already HTML)
+/// - `.txt` -> wrapped in `<pre class="plaintext">`
+/// - Unknown -> error
+pub fn render_file(path: &Path) -> Result<String, RenderError> {
+    let format = detect_format(path)?;
+
+    match format {
+        ContentFormat::Markdown => {
+            let content = std::fs::read_to_string(path)
+                .map_err(|e| RenderError::ReadFailed(path.to_path_buf(), e))?;
+            Ok(render_markdown(&content))
+        }
+        ContentFormat::Rst => render_rst(path),
+        ContentFormat::Html => {
+            let content = std::fs::read_to_string(path)
+                .map_err(|e| RenderError::ReadFailed(path.to_path_buf(), e))?;
+            Ok(render_html_passthrough(&content))
+        }
+        ContentFormat::Txt => {
+            let content = std::fs::read_to_string(path)
+                .map_err(|e| RenderError::ReadFailed(path.to_path_buf(), e))?;
+            Ok(render_txt(&content))
+        }
+    }
 }
 
 /// Decode the basic HTML entities that comrak encodes inside `<code>` blocks.
@@ -134,17 +249,13 @@ fn replace_wikilinks(html: &str) -> String {
         .into_owned()
 }
 
-/// Read a markdown file and render it to an HTML fragment.
-pub fn render_file(path: &Path) -> Result<String, RenderError> {
-    let markdown = std::fs::read_to_string(path)
-        .map_err(|e| RenderError::ReadFailed(path.to_path_buf(), e))?;
-    Ok(render_markdown(&markdown))
-}
-
 #[derive(Debug)]
 pub enum RenderError {
     ReadFailed(std::path::PathBuf, std::io::Error),
     WriteFailed(std::path::PathBuf, std::io::Error),
+    UnsupportedFormat(String),
+    Rst2HtmlNotFound,
+    RstFailed(String),
 }
 
 impl std::fmt::Display for RenderError {
@@ -156,6 +267,19 @@ impl std::fmt::Display for RenderError {
             Self::WriteFailed(path, err) => {
                 write!(f, "failed to write output file {}: {err}", path.display())
             }
+            Self::UnsupportedFormat(ext) => {
+                write!(
+                    f,
+                    "unsupported content format: {ext} (supported: .md, .rst, .html, .txt)"
+                )
+            }
+            Self::Rst2HtmlNotFound => {
+                write!(
+                    f,
+                    "rst2html5 not found on PATH (install python3Packages.docutils)"
+                )
+            }
+            Self::RstFailed(msg) => write!(f, "RST rendering failed: {msg}"),
         }
     }
 }
@@ -249,6 +373,261 @@ mod tests {
     fn render_file_missing() {
         let result = render_file(Path::new("/nonexistent/file.md"));
         assert!(matches!(result, Err(RenderError::ReadFailed(_, _))));
+    }
+
+    // --- format detection tests ---
+
+    #[test]
+    fn detect_format_markdown() {
+        assert_eq!(
+            detect_format(Path::new("post.md")).unwrap(),
+            ContentFormat::Markdown
+        );
+    }
+
+    #[test]
+    fn detect_format_rst() {
+        assert_eq!(
+            detect_format(Path::new("post.rst")).unwrap(),
+            ContentFormat::Rst
+        );
+    }
+
+    #[test]
+    fn detect_format_html() {
+        assert_eq!(
+            detect_format(Path::new("post.html")).unwrap(),
+            ContentFormat::Html
+        );
+    }
+
+    #[test]
+    fn detect_format_htm() {
+        assert_eq!(
+            detect_format(Path::new("post.htm")).unwrap(),
+            ContentFormat::Html
+        );
+    }
+
+    #[test]
+    fn detect_format_txt() {
+        assert_eq!(
+            detect_format(Path::new("post.txt")).unwrap(),
+            ContentFormat::Txt
+        );
+    }
+
+    #[test]
+    fn detect_format_unknown() {
+        let err = detect_format(Path::new("post.docx")).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unsupported content format: docx"),
+            "expected unsupported format error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn detect_format_no_extension() {
+        let err = detect_format(Path::new("README")).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("(no extension)"),
+            "expected no-extension error, got: {msg}"
+        );
+    }
+
+    // --- HTML passthrough tests ---
+
+    #[test]
+    fn html_passthrough_returns_content_as_is() {
+        let content = "<h1>Title</h1>\n<p>Some paragraph.</p>";
+        let result = render_html_passthrough(content);
+        assert_eq!(result, content);
+    }
+
+    #[test]
+    fn html_passthrough_replaces_wikilinks() {
+        let content = "<p>See [[other-page]] for details.</p>";
+        let result = render_html_passthrough(content);
+        assert!(
+            result.contains("<a class=\"wikilink\" data-slug=\"other-page\">[[other-page]]</a>"),
+            "expected wikilink in HTML passthrough, got: {result}"
+        );
+    }
+
+    #[test]
+    fn html_passthrough_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("page.html");
+        std::fs::write(&path, "<p>Hello [[wiki]]</p>").unwrap();
+
+        let result = render_file(&path).unwrap();
+        assert!(
+            result.contains("<a class=\"wikilink\" data-slug=\"wiki\">[[wiki]]</a>"),
+            "expected wikilink in HTML file, got: {result}"
+        );
+        assert!(
+            result.contains("<p>Hello"),
+            "expected HTML content, got: {result}"
+        );
+    }
+
+    // --- txt wrapping tests ---
+
+    #[test]
+    fn txt_wraps_in_pre() {
+        let content = "Hello world\nSecond line";
+        let result = render_txt(content);
+        assert!(
+            result.starts_with("<pre class=\"plaintext\">"),
+            "expected <pre> wrapper, got: {result}"
+        );
+        assert!(
+            result.ends_with("</pre>"),
+            "expected </pre> closing, got: {result}"
+        );
+    }
+
+    #[test]
+    fn txt_escapes_html_entities() {
+        let content = "<script>alert('xss')</script>";
+        let result = render_txt(content);
+        assert!(
+            !result.contains("<script>"),
+            "should escape HTML tags in txt, got: {result}"
+        );
+        assert!(
+            result.contains("&lt;script&gt;"),
+            "expected escaped tags, got: {result}"
+        );
+    }
+
+    #[test]
+    fn txt_replaces_wikilinks() {
+        // Wiki-links in txt: the [[ and ]] are not HTML-escaped because
+        // html_escape only escapes &, <, >, " — so wiki-link replacement works.
+        let content = "See [[my-page]] for info.";
+        let result = render_txt(content);
+        assert!(
+            result.contains("<a class=\"wikilink\" data-slug=\"my-page\">"),
+            "expected wikilink in txt, got: {result}"
+        );
+    }
+
+    #[test]
+    fn txt_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("notes.txt");
+        std::fs::write(&path, "Plain text content").unwrap();
+
+        let result = render_file(&path).unwrap();
+        assert!(
+            result.contains("<pre class=\"plaintext\">"),
+            "expected pre wrapper from txt file, got: {result}"
+        );
+        assert!(
+            result.contains("Plain text content"),
+            "expected text content, got: {result}"
+        );
+    }
+
+    // --- RST rendering tests ---
+
+    /// Helper: returns true if rst2html5 is available on PATH.
+    fn rst2html5_available() -> bool {
+        std::process::Command::new("which")
+            .arg("rst2html5")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    #[test]
+    fn rst_body_extraction() {
+        let full = r#"<!DOCTYPE html>
+<html><head><title>T</title></head>
+<body>
+<div class="document">
+<p>Hello world</p>
+</div>
+</body>
+</html>"#;
+        let body = extract_body(full);
+        assert!(
+            body.contains("<p>Hello world</p>"),
+            "expected body content, got: {body}"
+        );
+        assert!(
+            !body.contains("<html"),
+            "should not contain html tag, got: {body}"
+        );
+        assert!(
+            !body.contains("<head"),
+            "should not contain head tag, got: {body}"
+        );
+    }
+
+    #[test]
+    fn rst_body_extraction_no_body_tag() {
+        let fragment = "<p>Just a fragment</p>";
+        let result = extract_body(fragment);
+        assert_eq!(result, "<p>Just a fragment</p>");
+    }
+
+    #[test]
+    fn rst_render_file() {
+        if !rst2html5_available() {
+            eprintln!("SKIP: rst2html5 not available");
+            return;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("doc.rst");
+        std::fs::write(&path, "Title\n=====\n\nA paragraph with [[wiki-link]].\n").unwrap();
+
+        let result = render_file(&path).unwrap();
+        assert!(
+            result.contains("<a class=\"wikilink\" data-slug=\"wiki-link\">"),
+            "expected wikilink in RST output, got: {result}"
+        );
+        // Should be a fragment, not a full document
+        assert!(
+            !result.contains("<html"),
+            "should not contain <html> tag, got: {result}"
+        );
+    }
+
+    #[test]
+    fn rst_missing_binary() {
+        // Test with a path that won't have rst2html5 -- we test the error path
+        // by directly testing the error variant format.
+        let err = RenderError::Rst2HtmlNotFound;
+        let msg = err.to_string();
+        assert!(
+            msg.contains("rst2html5 not found on PATH"),
+            "expected clear error message, got: {msg}"
+        );
+        assert!(
+            msg.contains("python3Packages.docutils"),
+            "expected install hint, got: {msg}"
+        );
+    }
+
+    // --- unsupported format via render_file ---
+
+    #[test]
+    fn render_file_unsupported_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("doc.docx");
+        std::fs::write(&path, "content").unwrap();
+
+        let err = render_file(&path).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unsupported content format: docx"),
+            "expected unsupported format error, got: {msg}"
+        );
     }
 
     // --- wiki-link tests ---
