@@ -1,9 +1,10 @@
 ---
 id: TASK-0004
 title: 'M4: Aggregate Pages'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 22:04'
+updated_date: '2026-03-23 23:13'
 labels:
   - milestone
 dependencies:

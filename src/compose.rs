@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -115,6 +116,62 @@ impl From<tera::Error> for ComposeError {
 }
 
 // ---------------------------------------------------------------------------
+// Tag collection
+// ---------------------------------------------------------------------------
+
+/// Collect all tags from posts and return a map of tag -> count, sorted by tag name.
+fn collect_tags(posts: &[PostEntry]) -> BTreeMap<String, usize> {
+    let mut tags: BTreeMap<String, usize> = BTreeMap::new();
+    for post in posts {
+        if let Some(tag_array) = post.metadata.get("tags").and_then(|v| v.as_array()) {
+            for tag_val in tag_array {
+                if let Some(tag) = tag_val.as_str() {
+                    *tags.entry(tag.to_string()).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+    tags
+}
+
+/// Filter posts that have a given tag.
+fn posts_with_tag<'a>(posts: &'a [PostEntry], tag: &str) -> Vec<&'a PostEntry> {
+    posts
+        .iter()
+        .filter(|p| {
+            p.metadata
+                .get("tags")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().any(|t| t.as_str() == Some(tag)))
+                .unwrap_or(false)
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Archive grouping
+// ---------------------------------------------------------------------------
+
+/// Group posts by year (extracted from date field). Returns years in descending order.
+fn group_posts_by_year(posts: &[PostEntry]) -> Vec<(String, Vec<&Value>)> {
+    let mut by_year: BTreeMap<String, Vec<&Value>> = BTreeMap::new();
+    for post in posts {
+        let year = post
+            .metadata
+            .get("date")
+            .and_then(|v| v.as_str())
+            .and_then(|d| d.split('-').next())
+            .unwrap_or("Unknown")
+            .to_string();
+        by_year.entry(year).or_default().push(&post.metadata);
+    }
+    // Reverse to get descending order (newest year first).
+    let mut years: Vec<(String, Vec<&Value>)> = by_year.into_iter().collect();
+    years.reverse();
+    years
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
 
@@ -152,6 +209,11 @@ pub fn run_compose(
     let site_value =
         serde_json::to_value(&site_config).expect("SiteConfig serialization should not fail");
 
+    // Collect tags for use in all templates.
+    let tags_map = collect_tags(&posts);
+    let tags_value =
+        serde_json::to_value(&tags_map).expect("tags map serialization should not fail");
+
     // --- Render individual post pages ---
     for post in &posts {
         let slug = &post.slug;
@@ -164,6 +226,7 @@ pub fn run_compose(
         let mut context = Context::new();
         context.insert("site", &site_value);
         context.insert("current_url", &current_url);
+        context.insert("tags", &tags_value);
 
         // Build post context: metadata fields + content.
         let mut post_value = post.metadata.clone();
@@ -226,6 +289,7 @@ pub fn run_compose(
             context.insert("current_url", &current_url);
             context.insert("posts", &page_posts);
             context.insert("pagination", &pagination);
+            context.insert("tags", &tags_value);
 
             let rendered = tera.render("index.html", &context)?;
 
@@ -242,6 +306,135 @@ pub fn run_compose(
                 .map_err(|e| ComposeError::WriteFailed(index_path.clone(), e))?;
 
             output_paths.push(index_path);
+        }
+    }
+
+    // --- Render tag pages ---
+    for tag in tags_map.keys() {
+        let tagged_posts = posts_with_tag(&posts, tag);
+        let tag_post_values: Vec<&Value> = tagged_posts.iter().map(|p| &p.metadata).collect();
+
+        let tag_dir = out_dir.join("tags").join(tag);
+        std::fs::create_dir_all(&tag_dir)
+            .map_err(|e| ComposeError::WriteFailed(tag_dir.clone(), e))?;
+
+        let current_url = format!("/tags/{tag}/");
+
+        let mut context = Context::new();
+        context.insert("site", &site_value);
+        context.insert("current_url", &current_url);
+        context.insert("tag_name", tag);
+        context.insert("posts", &tag_post_values);
+        context.insert("tags", &tags_value);
+
+        let rendered = tera.render("tag.html", &context)?;
+        let index_path = tag_dir.join("index.html");
+        std::fs::write(&index_path, &rendered)
+            .map_err(|e| ComposeError::WriteFailed(index_path.clone(), e))?;
+
+        output_paths.push(index_path);
+    }
+
+    // --- Render archive page ---
+    {
+        let archive_dir = out_dir.join("archive");
+        std::fs::create_dir_all(&archive_dir)
+            .map_err(|e| ComposeError::WriteFailed(archive_dir.clone(), e))?;
+
+        let years = group_posts_by_year(&posts);
+
+        // Build a serializable structure: Vec of {year, posts}.
+        let years_value: Vec<Value> = years
+            .iter()
+            .map(|(year, year_posts)| {
+                serde_json::json!({
+                    "year": year,
+                    "posts": year_posts,
+                })
+            })
+            .collect();
+
+        let current_url = "/archive/".to_string();
+
+        let mut context = Context::new();
+        context.insert("site", &site_value);
+        context.insert("current_url", &current_url);
+        context.insert("years", &years_value);
+        context.insert("tags", &tags_value);
+
+        let rendered = tera.render("archive.html", &context)?;
+        let index_path = archive_dir.join("index.html");
+        std::fs::write(&index_path, &rendered)
+            .map_err(|e| ComposeError::WriteFailed(index_path.clone(), e))?;
+
+        output_paths.push(index_path);
+    }
+
+    // --- Render Atom feed ---
+    {
+        let feed_enabled = site_config.feed.as_ref().map(|f| f.enable).unwrap_or(false);
+
+        if feed_enabled {
+            let feed_title = site_config
+                .feed
+                .as_ref()
+                .and_then(|f| f.title.clone())
+                .unwrap_or_else(|| site_config.site_name.clone());
+
+            let feed_description = site_config
+                .feed
+                .as_ref()
+                .and_then(|f| f.description.clone())
+                .unwrap_or_default();
+
+            let author_name = site_config
+                .author
+                .as_ref()
+                .map(|a| a.name.clone())
+                .unwrap_or_default();
+
+            let author_email = site_config
+                .author
+                .as_ref()
+                .and_then(|a| a.email.clone())
+                .unwrap_or_default();
+
+            // Take up to 20 most recent posts for the feed.
+            let feed_post_count = 20.min(posts.len());
+            let feed_posts: Vec<Value> = posts[..feed_post_count]
+                .iter()
+                .map(|p| {
+                    let mut val = p.metadata.clone();
+                    if let Some(obj) = val.as_object_mut() {
+                        obj.insert("content".into(), Value::String(p.content.clone()));
+                    }
+                    val
+                })
+                .collect();
+
+            // Use the date of the most recent post as the feed updated time.
+            let updated = posts
+                .first()
+                .and_then(|p| p.metadata.get("date"))
+                .and_then(|v| v.as_str())
+                .map(|d| format!("{d}T00:00:00Z"))
+                .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string());
+
+            let mut context = Context::new();
+            context.insert("site", &site_value);
+            context.insert("feed_title", &feed_title);
+            context.insert("feed_description", &feed_description);
+            context.insert("author_name", &author_name);
+            context.insert("author_email", &author_email);
+            context.insert("posts", &feed_posts);
+            context.insert("updated", &updated);
+
+            let rendered = tera.render("feed.xml", &context)?;
+            let feed_path = out_dir.join("feed.xml");
+            std::fs::write(&feed_path, &rendered)
+                .map_err(|e| ComposeError::WriteFailed(feed_path.clone(), e))?;
+
+            output_paths.push(feed_path);
         }
     }
 
@@ -326,7 +519,10 @@ fn load_templates(template_dir: &Path) -> Result<Tera, ComposeError> {
         .join("*")
         .to_string_lossy()
         .to_string();
-    let tera = Tera::new(&glob)?;
+    let mut tera = Tera::new(&glob)?;
+    // Only auto-escape HTML files; XML templates (e.g. feed.xml) should not
+    // have their values escaped since they manage their own encoding.
+    tera.autoescape_on(vec![".html", ".htm"]);
     Ok(tera)
 }
 
@@ -360,6 +556,11 @@ mod tests {
   "author": {
     "name": "Test Author",
     "email": "test@example.com"
+  },
+  "feed": {
+    "enable": true,
+    "title": "Test Blog Feed",
+    "description": "A test feed"
   }
 }"#,
         )
@@ -406,7 +607,7 @@ mod tests {
         )
         .unwrap();
 
-        // Templates - use the actual theme templates
+        // Templates
         let template_dir = base.join("templates");
         std::fs::create_dir_all(&template_dir).unwrap();
 
@@ -463,6 +664,76 @@ mod tests {
         )
         .unwrap();
 
+        std::fs::write(
+            template_dir.join("tag.html"),
+            r#"{% extends "base.html" %}
+{% block title %}Posts tagged "{{ tag_name }}" — {{ site.site_name }}{% endblock %}
+{% block content %}
+<h1>Posts tagged "{{ tag_name }}"</h1>
+<div class="post-list">
+  {% for p in posts %}
+  <article>
+    <h2><a href="/posts/{{ p.slug }}/">{{ p.title }}</a></h2>
+    <time>{{ p.date }}</time>
+    {% if p.summary %}<p>{{ p.summary }}</p>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% endblock %}"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            template_dir.join("archive.html"),
+            r#"{% extends "base.html" %}
+{% block title %}Archive — {{ site.site_name }}{% endblock %}
+{% block content %}
+<h1>Archive</h1>
+{% for group in years %}
+<section>
+  <h2>{{ group.year }}</h2>
+  <ul>
+    {% for p in group.posts %}
+    <li>
+      <time>{{ p.date }}</time>
+      <a href="/posts/{{ p.slug }}/">{{ p.title }}</a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endfor %}
+{% endblock %}"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            template_dir.join("feed.xml"),
+            r#"<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>{{ feed_title }}</title>
+  <subtitle>{{ feed_description }}</subtitle>
+  <link href="{{ site.base_url }}/feed.xml" rel="self" type="application/atom+xml"/>
+  <link href="{{ site.base_url }}/" rel="alternate" type="text/html"/>
+  <id>{{ site.base_url }}/</id>
+  <updated>{{ updated }}</updated>
+  <author>
+    <name>{{ author_name }}</name>
+    {% if author_email %}<email>{{ author_email }}</email>{% endif %}
+  </author>
+  {% for p in posts %}
+  <entry>
+    <title>{{ p.title }}</title>
+    <link href="{{ site.base_url }}/posts/{{ p.slug }}/" rel="alternate" type="text/html"/>
+    <id>{{ site.base_url }}/posts/{{ p.slug }}/</id>
+    <published>{{ p.date }}T00:00:00Z</published>
+    <updated>{{ p.date }}T00:00:00Z</updated>
+    {% if p.summary %}<summary>{{ p.summary }}</summary>{% endif %}
+  </entry>
+  {% endfor %}
+</feed>"#,
+        )
+        .unwrap();
+
         // Static assets
         let static_dir = base.join("static");
         std::fs::create_dir_all(static_dir.join("css")).unwrap();
@@ -481,12 +752,44 @@ mod tests {
         )
     }
 
+    /// Fixture with 3 posts to test pagination (posts_per_page=2 means 2 pages).
+    fn setup_pagination_fixture() -> (TempDir, PathBuf, PathBuf, PathBuf, PathBuf, PathBuf) {
+        let (tmp, config_path, posts_dir, template_dir, static_dir, out_dir) = setup_fixture();
+
+        // Add a third post so pagination kicks in.
+        let post3_dir = posts_dir.join("third-post");
+        std::fs::create_dir_all(&post3_dir).unwrap();
+        std::fs::write(post3_dir.join("content.html"), "<p>Third post content.</p>").unwrap();
+        std::fs::write(
+            post3_dir.join("computed.json"),
+            r#"{
+  "slug": "third-post",
+  "title": "Third Post",
+  "date": "2023-12-01",
+  "tags": ["nix"],
+  "summary": "The third post.",
+  "word_count": 3,
+  "reading_time_minutes": 1
+}"#,
+        )
+        .unwrap();
+
+        (
+            tmp,
+            config_path,
+            posts_dir,
+            template_dir,
+            static_dir,
+            out_dir,
+        )
+    }
+
     #[test]
     fn compose_produces_post_pages() {
         let (_tmp, config, posts_dir, templates, static_dir, out) = setup_fixture();
         let result = run_compose(&config, &posts_dir, &templates, &static_dir, &out).unwrap();
 
-        // Should produce post pages + index
+        // Should produce post pages + index + tag pages + archive + feed
         assert!(
             result.len() >= 3,
             "expected at least 3 output files, got {}",
@@ -639,13 +942,391 @@ mod tests {
             "{% extends \"base.html\" %}{% block content %}ok{% endblock %}",
         )
         .unwrap();
+        std::fs::write(
+            tpl_dir.join("archive.html"),
+            "{% extends \"base.html\" %}{% block content %}archive{% endblock %}",
+        )
+        .unwrap();
+        std::fs::write(
+            tpl_dir.join("tag.html"),
+            "{% extends \"base.html\" %}{% block content %}tag{% endblock %}",
+        )
+        .unwrap();
 
         let static_dir = base.join("static");
         std::fs::create_dir_all(&static_dir).unwrap();
 
         let out = base.join("out");
         let result = run_compose(&config_path, &posts_dir, &tpl_dir, &static_dir, &out).unwrap();
-        // Only the index page should be produced (no posts rendered)
-        assert_eq!(result.len(), 1);
+        // Index page + archive page (no tag pages since no posts have tags, no feed since not enabled)
+        assert_eq!(result.len(), 2);
+    }
+
+    // --- Pagination tests ---
+
+    #[test]
+    fn compose_pagination_produces_multiple_pages() {
+        let (_tmp, config, posts_dir, templates, static_dir, out) = setup_pagination_fixture();
+        run_compose(&config, &posts_dir, &templates, &static_dir, &out).unwrap();
+
+        // Page 1 at /index.html
+        let page1 = std::fs::read_to_string(out.join("index.html")).unwrap();
+        assert!(
+            page1.contains("Page 1 of 2"),
+            "page 1 should show pagination: got {}",
+            page1
+        );
+
+        // Page 2 at /page/2/index.html
+        let page2_path = out.join("page/2/index.html");
+        assert!(page2_path.exists(), "page 2 should exist");
+        let page2 = std::fs::read_to_string(&page2_path).unwrap();
+        assert!(
+            page2.contains("Page 2 of 2"),
+            "page 2 should show pagination: got {}",
+            page2
+        );
+    }
+
+    // --- Tag tests ---
+
+    #[test]
+    fn collect_tags_from_posts() {
+        let posts = vec![
+            PostEntry {
+                slug: "a".into(),
+                metadata: serde_json::json!({"tags": ["rust", "nix"]}),
+                content: String::new(),
+            },
+            PostEntry {
+                slug: "b".into(),
+                metadata: serde_json::json!({"tags": ["rust"]}),
+                content: String::new(),
+            },
+            PostEntry {
+                slug: "c".into(),
+                metadata: serde_json::json!({}),
+                content: String::new(),
+            },
+        ];
+        let tags = collect_tags(&posts);
+        assert_eq!(tags.get("rust"), Some(&2));
+        assert_eq!(tags.get("nix"), Some(&1));
+        assert_eq!(tags.len(), 2);
+    }
+
+    #[test]
+    fn collect_tags_empty_posts() {
+        let tags = collect_tags(&[]);
+        assert!(tags.is_empty());
+    }
+
+    #[test]
+    fn posts_with_tag_filters_correctly() {
+        let posts = vec![
+            PostEntry {
+                slug: "a".into(),
+                metadata: serde_json::json!({"tags": ["rust", "nix"]}),
+                content: String::new(),
+            },
+            PostEntry {
+                slug: "b".into(),
+                metadata: serde_json::json!({"tags": ["rust"]}),
+                content: String::new(),
+            },
+            PostEntry {
+                slug: "c".into(),
+                metadata: serde_json::json!({"tags": ["nix"]}),
+                content: String::new(),
+            },
+        ];
+        let rust_posts = posts_with_tag(&posts, "rust");
+        assert_eq!(rust_posts.len(), 2);
+
+        let nix_posts = posts_with_tag(&posts, "nix");
+        assert_eq!(nix_posts.len(), 2);
+
+        let missing = posts_with_tag(&posts, "python");
+        assert!(missing.is_empty());
+    }
+
+    #[test]
+    fn compose_generates_tag_pages() {
+        let (_tmp, config, posts_dir, templates, static_dir, out) = setup_fixture();
+        run_compose(&config, &posts_dir, &templates, &static_dir, &out).unwrap();
+
+        // Tag "rust" should have both posts
+        let rust_tag = std::fs::read_to_string(out.join("tags/rust/index.html")).unwrap();
+        assert!(
+            rust_tag.contains("Posts tagged"),
+            "tag page should have heading"
+        );
+        assert!(
+            rust_tag.contains("First Post"),
+            "rust tag should include first post"
+        );
+        assert!(
+            rust_tag.contains("Second Post"),
+            "rust tag should include second post"
+        );
+
+        // Tag "nix" should have only first post
+        let nix_tag = std::fs::read_to_string(out.join("tags/nix/index.html")).unwrap();
+        assert!(
+            nix_tag.contains("First Post"),
+            "nix tag should include first post"
+        );
+        assert!(
+            !nix_tag.contains("Second Post"),
+            "nix tag should not include second post"
+        );
+    }
+
+    // --- Archive tests ---
+
+    #[test]
+    fn group_posts_by_year_correct() {
+        let posts = vec![
+            PostEntry {
+                slug: "a".into(),
+                metadata: serde_json::json!({"date": "2024-04-01", "title": "A"}),
+                content: String::new(),
+            },
+            PostEntry {
+                slug: "b".into(),
+                metadata: serde_json::json!({"date": "2024-01-15", "title": "B"}),
+                content: String::new(),
+            },
+            PostEntry {
+                slug: "c".into(),
+                metadata: serde_json::json!({"date": "2023-06-01", "title": "C"}),
+                content: String::new(),
+            },
+        ];
+        let years = group_posts_by_year(&posts);
+        assert_eq!(years.len(), 2);
+        // Descending: 2024 first, then 2023
+        assert_eq!(years[0].0, "2024");
+        assert_eq!(years[0].1.len(), 2);
+        assert_eq!(years[1].0, "2023");
+        assert_eq!(years[1].1.len(), 1);
+    }
+
+    #[test]
+    fn group_posts_by_year_empty() {
+        let years = group_posts_by_year(&[]);
+        assert!(years.is_empty());
+    }
+
+    #[test]
+    fn compose_generates_archive_page() {
+        let (_tmp, config, posts_dir, templates, static_dir, out) = setup_fixture();
+        run_compose(&config, &posts_dir, &templates, &static_dir, &out).unwrap();
+
+        let archive = std::fs::read_to_string(out.join("archive/index.html")).unwrap();
+        assert!(archive.contains("Archive"), "archive should have heading");
+        assert!(
+            archive.contains("2024"),
+            "archive should group by year 2024"
+        );
+        assert!(
+            archive.contains("First Post"),
+            "archive should list first post"
+        );
+        assert!(
+            archive.contains("Second Post"),
+            "archive should list second post"
+        );
+    }
+
+    #[test]
+    fn compose_archive_multiple_years() {
+        let (_tmp, config, posts_dir, templates, static_dir, out) = setup_pagination_fixture();
+        run_compose(&config, &posts_dir, &templates, &static_dir, &out).unwrap();
+
+        let archive = std::fs::read_to_string(out.join("archive/index.html")).unwrap();
+        assert!(archive.contains("2024"), "archive should have year 2024");
+        assert!(archive.contains("2023"), "archive should have year 2023");
+        // 2024 should appear before 2023 (descending)
+        let pos_2024 = archive.find("2024").unwrap();
+        let pos_2023 = archive.find("2023").unwrap();
+        assert!(
+            pos_2024 < pos_2023,
+            "2024 should appear before 2023 in archive"
+        );
+    }
+
+    // --- Feed tests ---
+
+    #[test]
+    fn compose_generates_atom_feed() {
+        let (_tmp, config, posts_dir, templates, static_dir, out) = setup_fixture();
+        run_compose(&config, &posts_dir, &templates, &static_dir, &out).unwrap();
+
+        let feed = std::fs::read_to_string(out.join("feed.xml")).unwrap();
+        assert!(
+            feed.contains("<?xml version=\"1.0\""),
+            "feed should be valid XML"
+        );
+        assert!(
+            feed.contains("<feed xmlns=\"http://www.w3.org/2005/Atom\">"),
+            "feed should be Atom format"
+        );
+        assert!(
+            feed.contains("<title>Test Blog Feed</title>"),
+            "feed should have title"
+        );
+        assert!(feed.contains("<entry>"), "feed should contain entries");
+        assert!(
+            feed.contains("First Post"),
+            "feed should contain first post"
+        );
+        assert!(
+            feed.contains("Second Post"),
+            "feed should contain second post"
+        );
+        assert!(
+            feed.contains("<published>"),
+            "entries should have published date"
+        );
+        assert!(feed.contains("<summary>"), "entries should have summary");
+        assert!(feed.contains("<author>"), "feed should have author");
+        assert!(feed.contains("Test Author"), "feed should have author name");
+    }
+
+    #[test]
+    fn compose_no_feed_when_disabled() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path();
+
+        let config_path = base.join("config.json");
+        std::fs::write(
+            &config_path,
+            r#"{
+  "site_name": "No Feed Blog",
+  "base_url": "https://example.com",
+  "language": "en",
+  "posts_per_page": 10
+}"#,
+        )
+        .unwrap();
+
+        let posts_dir = base.join("posts");
+        std::fs::create_dir_all(&posts_dir).unwrap();
+
+        let tpl_dir = base.join("tpl");
+        std::fs::create_dir_all(&tpl_dir).unwrap();
+        std::fs::write(
+            tpl_dir.join("base.html"),
+            "{% block content %}{% endblock %}",
+        )
+        .unwrap();
+        std::fs::write(
+            tpl_dir.join("index.html"),
+            "{% extends \"base.html\" %}{% block content %}idx{% endblock %}",
+        )
+        .unwrap();
+        std::fs::write(
+            tpl_dir.join("archive.html"),
+            "{% extends \"base.html\" %}{% block content %}arc{% endblock %}",
+        )
+        .unwrap();
+        std::fs::write(
+            tpl_dir.join("tag.html"),
+            "{% extends \"base.html\" %}{% block content %}tag{% endblock %}",
+        )
+        .unwrap();
+
+        let static_dir = base.join("static");
+        std::fs::create_dir_all(&static_dir).unwrap();
+
+        let out = base.join("out");
+        run_compose(&config_path, &posts_dir, &tpl_dir, &static_dir, &out).unwrap();
+
+        assert!(
+            !out.join("feed.xml").exists(),
+            "feed.xml should not be generated when feed is not configured"
+        );
+    }
+
+    #[test]
+    fn compose_feed_xml_structure() {
+        let (_tmp, config, posts_dir, templates, static_dir, out) = setup_fixture();
+        run_compose(&config, &posts_dir, &templates, &static_dir, &out).unwrap();
+
+        let feed = std::fs::read_to_string(out.join("feed.xml")).unwrap();
+
+        // Check required Atom elements
+        assert!(feed.contains("<link href=\"https://example.com/feed.xml\" rel=\"self\""));
+        assert!(feed.contains("<link href=\"https://example.com/\" rel=\"alternate\""));
+        assert!(feed.contains("<id>https://example.com/</id>"));
+        assert!(feed.contains("<updated>"));
+
+        // Check entry structure
+        assert!(feed.contains("<entry>"));
+        assert!(feed.contains("</entry>"));
+        assert!(feed.contains("<id>https://example.com/posts/"));
+    }
+
+    // --- Tags available in all templates ---
+
+    #[test]
+    fn tags_variable_available_in_all_pages() {
+        let (_tmp, config, posts_dir, templates, static_dir, out) = setup_fixture();
+
+        // Rewrite templates to output the tags variable.
+        std::fs::write(
+            templates.join("base.html"),
+            "{% block content %}{% endblock %}",
+        )
+        .unwrap();
+        std::fs::write(
+            templates.join("post.html"),
+            r#"{% extends "base.html" %}
+{% block content %}TAGS:{% for t, c in tags %}{{t}}={{c}},{% endfor %}{% endblock %}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            templates.join("index.html"),
+            r#"{% extends "base.html" %}
+{% block content %}TAGS:{% for t, c in tags %}{{t}}={{c}},{% endfor %}{% endblock %}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            templates.join("archive.html"),
+            r#"{% extends "base.html" %}
+{% block content %}TAGS:{% for t, c in tags %}{{t}}={{c}},{% endfor %}{% endblock %}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            templates.join("tag.html"),
+            r#"{% extends "base.html" %}
+{% block content %}TAGS:{% for t, c in tags %}{{t}}={{c}},{% endfor %}{% endblock %}"#,
+        )
+        .unwrap();
+
+        run_compose(&config, &posts_dir, &templates, &static_dir, &out).unwrap();
+
+        let index = std::fs::read_to_string(out.join("index.html")).unwrap();
+        assert!(index.contains("nix=1"), "index should have tags: {index}");
+        assert!(index.contains("rust=2"), "index should have tags: {index}");
+
+        let post = std::fs::read_to_string(out.join("posts/first-post/index.html")).unwrap();
+        assert!(
+            post.contains("rust=2"),
+            "post page should have tags: {post}"
+        );
+
+        let archive = std::fs::read_to_string(out.join("archive/index.html")).unwrap();
+        assert!(
+            archive.contains("rust=2"),
+            "archive should have tags: {archive}"
+        );
+
+        let tag_page = std::fs::read_to_string(out.join("tags/rust/index.html")).unwrap();
+        assert!(
+            tag_page.contains("nix=1"),
+            "tag page should have tags: {tag_page}"
+        );
     }
 }
