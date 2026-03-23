@@ -10,7 +10,7 @@
       {% if p.tags %}
       <ul class="tag-list">
         {% for tag in p.tags %}
-        <li><a href="/tags/{{ tag }}/">{{ tag }}</a></li>
+        <li><a href="/tags/{{ tag | slugify_tag }}/">{{ tag }}</a></li>
         {% endfor %}
       </ul>
       {% endif %}

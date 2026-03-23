@@ -116,6 +116,41 @@ impl From<tera::Error> for ComposeError {
 }
 
 // ---------------------------------------------------------------------------
+// Tag slugification
+// ---------------------------------------------------------------------------
+
+/// Slugify a tag name for use in filesystem paths and URLs:
+/// lowercase, replace spaces with hyphens, strip non-alphanumeric chars
+/// (except hyphens), and collapse consecutive hyphens.
+fn slugify_tag(tag: &str) -> String {
+    let s: String = tag
+        .to_lowercase()
+        .chars()
+        .map(|c| if c == ' ' { '-' } else { c })
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+    // Collapse consecutive hyphens and trim leading/trailing hyphens.
+    let mut result = String::with_capacity(s.len());
+    let mut prev_hyphen = true; // treat start as if preceded by hyphen to trim leading
+    for c in s.chars() {
+        if c == '-' {
+            if !prev_hyphen {
+                result.push('-');
+            }
+            prev_hyphen = true;
+        } else {
+            result.push(c);
+            prev_hyphen = false;
+        }
+    }
+    // Trim trailing hyphen
+    if result.ends_with('-') {
+        result.pop();
+    }
+    result
+}
+
+// ---------------------------------------------------------------------------
 // Tag collection
 // ---------------------------------------------------------------------------
 
@@ -314,16 +349,18 @@ pub fn run_compose(
         let tagged_posts = posts_with_tag(&posts, tag);
         let tag_post_values: Vec<&Value> = tagged_posts.iter().map(|p| &p.metadata).collect();
 
-        let tag_dir = out_dir.join("tags").join(tag);
+        let tag_slug = slugify_tag(tag);
+        let tag_dir = out_dir.join("tags").join(&tag_slug);
         std::fs::create_dir_all(&tag_dir)
             .map_err(|e| ComposeError::WriteFailed(tag_dir.clone(), e))?;
 
-        let current_url = format!("/tags/{tag}/");
+        let current_url = format!("/tags/{tag_slug}/");
 
         let mut context = Context::new();
         context.insert("site", &site_value);
         context.insert("current_url", &current_url);
         context.insert("tag_name", tag);
+        context.insert("tag_slug", &tag_slug);
         context.insert("posts", &tag_post_values);
         context.insert("tags", &tags_value);
 
@@ -479,6 +516,14 @@ fn load_posts(posts_dir: &Path) -> Result<Vec<PostEntry>, ComposeError> {
 
         // Both files must exist for a valid post.
         if !content_path.exists() || !computed_path.exists() {
+            let slug = entry_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| entry_path.display().to_string());
+            eprintln!(
+                "warning: skipping {}: missing content.html or computed.json",
+                slug
+            );
             continue;
         }
 
@@ -513,6 +558,28 @@ fn load_posts(posts_dir: &Path) -> Result<Vec<PostEntry>, ComposeError> {
     Ok(posts)
 }
 
+fn slugify_filter(
+    value: &Value,
+    _args: &std::collections::HashMap<String, Value>,
+) -> tera::Result<Value> {
+    let s = tera::try_get_value!("slugify_tag", "value", String, value);
+    Ok(Value::String(slugify_tag(&s)))
+}
+
+fn xml_escape_filter(
+    value: &Value,
+    _args: &std::collections::HashMap<String, Value>,
+) -> tera::Result<Value> {
+    let s = tera::try_get_value!("xml_escape", "value", String, value);
+    let escaped = s
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;");
+    Ok(Value::String(escaped))
+}
+
 fn load_templates(template_dir: &Path) -> Result<Tera, ComposeError> {
     let glob = template_dir
         .join("**")
@@ -523,6 +590,8 @@ fn load_templates(template_dir: &Path) -> Result<Tera, ComposeError> {
     // Only auto-escape HTML files; XML templates (e.g. feed.xml) should not
     // have their values escaped since they manage their own encoding.
     tera.autoescape_on(vec![".html", ".htm"]);
+    tera.register_filter("xml_escape", xml_escape_filter);
+    tera.register_filter("slugify_tag", slugify_filter);
     Ok(tera)
 }
 
@@ -710,24 +779,24 @@ mod tests {
             template_dir.join("feed.xml"),
             r#"<?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
-  <title>{{ feed_title }}</title>
-  <subtitle>{{ feed_description }}</subtitle>
+  <title>{{ feed_title | xml_escape }}</title>
+  <subtitle>{{ feed_description | xml_escape }}</subtitle>
   <link href="{{ site.base_url }}/feed.xml" rel="self" type="application/atom+xml"/>
   <link href="{{ site.base_url }}/" rel="alternate" type="text/html"/>
   <id>{{ site.base_url }}/</id>
   <updated>{{ updated }}</updated>
   <author>
-    <name>{{ author_name }}</name>
+    <name>{{ author_name | xml_escape }}</name>
     {% if author_email %}<email>{{ author_email }}</email>{% endif %}
   </author>
   {% for p in posts %}
   <entry>
-    <title>{{ p.title }}</title>
+    <title>{{ p.title | xml_escape }}</title>
     <link href="{{ site.base_url }}/posts/{{ p.slug }}/" rel="alternate" type="text/html"/>
     <id>{{ site.base_url }}/posts/{{ p.slug }}/</id>
     <published>{{ p.date }}T00:00:00Z</published>
     <updated>{{ p.date }}T00:00:00Z</updated>
-    {% if p.summary %}<summary>{{ p.summary }}</summary>{% endif %}
+    {% if p.summary %}<summary>{{ p.summary | xml_escape }}</summary>{% endif %}
   </entry>
   {% endfor %}
 </feed>"#,

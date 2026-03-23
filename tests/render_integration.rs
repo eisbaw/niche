@@ -50,7 +50,7 @@ fn full_pipeline_produces_content_html_and_computed_json() {
 
 #[test]
 fn full_pipeline_html_contains_rendered_markdown() {
-    let config_json = r#"{"slug": "s", "title": "t", "date": "d"}"#;
+    let config_json = r#"{"slug": "s", "title": "t", "date": "2024-01-01"}"#;
     let markdown = "Hello **bold** world.";
 
     let (_tmp, config_path, content_path, out_dir) = setup_fixture(config_json, markdown);
@@ -130,7 +130,7 @@ fn computed_json_preserves_extra_config_fields() {
 
 #[test]
 fn wikilinks_appear_as_placeholders_in_html() {
-    let config_json = r#"{"slug": "wl", "title": "WL", "date": "d"}"#;
+    let config_json = r#"{"slug": "wl", "title": "WL", "date": "2024-01-01"}"#;
     let markdown = "See [[other-post]] for details and [[another|Another Page]] too.";
 
     let (_tmp, config_path, content_path, out_dir) = setup_fixture(config_json, markdown);
@@ -150,7 +150,7 @@ fn wikilinks_appear_as_placeholders_in_html() {
 
 #[test]
 fn wikilinks_inside_rendered_paragraphs() {
-    let config_json = r#"{"slug": "wl2", "title": "WL2", "date": "d"}"#;
+    let config_json = r#"{"slug": "wl2", "title": "WL2", "date": "2024-01-01"}"#;
     let markdown = "Before [[link-target]] after.";
 
     let (_tmp, config_path, content_path, out_dir) = setup_fixture(config_json, markdown);
@@ -238,7 +238,7 @@ fn missing_config_file_produces_read_error() {
 
 #[test]
 fn missing_content_file_produces_read_error() {
-    let config_json = r#"{"slug": "s", "title": "t", "date": "d"}"#;
+    let config_json = r#"{"slug": "s", "title": "t", "date": "2024-01-01"}"#;
     let tmp = tempfile::tempdir().unwrap();
     let config_path = tmp.path().join("config.json");
     fs::write(&config_path, config_json).unwrap();

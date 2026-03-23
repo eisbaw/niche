@@ -126,7 +126,15 @@ fn main() {
             }
         },
         Command::Clean { out } => {
-            println!("clean: out={}", out.display());
+            if out.exists() {
+                if let Err(e) = std::fs::remove_dir_all(out) {
+                    eprintln!("Error: failed to remove {}: {e}", out.display());
+                    process::exit(1);
+                }
+                println!("Removed {}", out.display());
+            } else {
+                println!("Nothing to clean ({})", out.display());
+            }
         }
     }
 }

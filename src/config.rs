@@ -1,6 +1,11 @@
+use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::LazyLock;
+
+static DATE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}$").expect("date regex must compile"));
 
 #[derive(Debug, Deserialize)]
 pub struct PostConfig {
@@ -18,7 +23,16 @@ impl PostConfig {
             .map_err(|e| PostConfigError::ReadFailed(path.to_path_buf(), e))?;
         let config: PostConfig = serde_json::from_str(&contents)
             .map_err(|e| PostConfigError::ParseFailed(path.to_path_buf(), e))?;
+        config.validate()?;
         Ok(config)
+    }
+
+    /// Validate fields beyond what serde can check.
+    fn validate(&self) -> Result<(), PostConfigError> {
+        if !DATE_RE.is_match(&self.date) {
+            return Err(PostConfigError::InvalidDate(self.date.clone()));
+        }
+        Ok(())
     }
 }
 
@@ -26,6 +40,7 @@ impl PostConfig {
 pub enum PostConfigError {
     ReadFailed(std::path::PathBuf, std::io::Error),
     ParseFailed(std::path::PathBuf, serde_json::Error),
+    InvalidDate(String),
 }
 
 impl std::fmt::Display for PostConfigError {
@@ -36,6 +51,9 @@ impl std::fmt::Display for PostConfigError {
             }
             Self::ParseFailed(path, err) => {
                 write!(f, "failed to parse config file {}: {err}", path.display())
+            }
+            Self::InvalidDate(date) => {
+                write!(f, "date must be YYYY-MM-DD format, got: {date}")
             }
         }
     }
@@ -88,5 +106,36 @@ mod tests {
     fn from_file_missing_file() {
         let result = PostConfig::from_file(Path::new("/nonexistent/config.json"));
         assert!(matches!(result, Err(PostConfigError::ReadFailed(_, _))));
+    }
+
+    #[test]
+    fn from_file_rejects_invalid_date_format() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("config.json");
+        std::fs::write(
+            &path,
+            r#"{"slug": "test", "title": "Test", "date": "March 15, 2024"}"#,
+        )
+        .unwrap();
+        let result = PostConfig::from_file(&path);
+        assert!(matches!(result, Err(PostConfigError::InvalidDate(_))));
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("YYYY-MM-DD"),
+            "error should mention expected format: {err}"
+        );
+    }
+
+    #[test]
+    fn from_file_accepts_valid_date() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("config.json");
+        std::fs::write(
+            &path,
+            r#"{"slug": "test", "title": "Test", "date": "2024-03-15"}"#,
+        )
+        .unwrap();
+        let config = PostConfig::from_file(&path).unwrap();
+        assert_eq!(config.date, "2024-03-15");
     }
 }
