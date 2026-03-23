@@ -57,6 +57,13 @@ let
 
   # Validate slug uniqueness: if any slugs collide, listToAttrs silently
   # deduplicates. Compare the count of input posts vs output attr names.
+  #
+  # Expected error on duplicate slugs:
+  #   error: Duplicate slugs detected: N posts but only M unique slugs
+  #
+  # This cannot be tested in the normal e2e test (which expects success).
+  # To manually verify: create two content dirs with the same slug in meta.nix,
+  # then run `nix-build site.nix` and observe the assertion failure.
   slugCount = builtins.length (builtins.attrNames linksAttrs);
   postCount = builtins.length posts;
   _slugCheck = if slugCount != postCount

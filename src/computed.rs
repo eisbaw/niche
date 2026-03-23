@@ -34,10 +34,10 @@ pub fn word_count(html: &str) -> usize {
 
 /// Estimate reading time in minutes from a word count.
 ///
-/// Assumes ~250 words per minute. Rounds up, minimum 1.
+/// Assumes ~250 words per minute. Rounds up. Returns 0 for empty content.
 pub fn reading_time_minutes(word_count: usize) -> usize {
     if word_count == 0 {
-        return 1;
+        return 0;
     }
     word_count.div_ceil(250)
 }
@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     fn reading_time_zero_words() {
-        assert_eq!(reading_time_minutes(0), 1);
+        assert_eq!(reading_time_minutes(0), 0);
     }
 
     #[test]
@@ -215,6 +215,21 @@ mod tests {
         );
         assert_eq!(obj["word_count"], 10);
         assert_eq!(obj["reading_time_minutes"], 1);
+    }
+
+    #[test]
+    fn empty_content_word_count_zero_reading_time_zero() {
+        let config = PostConfig {
+            slug: "empty".into(),
+            title: "Empty".into(),
+            date: "2024-01-01".into(),
+            extra: std::collections::HashMap::new(),
+        };
+        let html = "";
+        let json = build_computed_json(&config, html);
+        let obj = json.as_object().unwrap();
+        assert_eq!(obj["word_count"], 0);
+        assert_eq!(obj["reading_time_minutes"], 0);
     }
 
     #[test]

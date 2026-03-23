@@ -32,6 +32,6 @@ new slug:
 site:
     nix-build site.nix
 
-# End-to-end tests (placeholder)
+# End-to-end tests: build the site and verify output
 e2e:
-    @echo "E2E tests not yet implemented"
+    bash tests/e2e.sh

@@ -1,9 +1,10 @@
 ---
 id: TASK-0006
 title: 'M6: Hardening'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 22:05'
+updated_date: '2026-03-23 23:24'
 labels:
   - milestone
 dependencies:
