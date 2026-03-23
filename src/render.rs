@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use comrak::{markdown_to_html, Options};
+use regex::Regex;
 
 /// Render markdown content to an HTML fragment.
 ///
@@ -22,7 +23,34 @@ pub fn render_markdown(markdown: &str) -> String {
     // Allow raw HTML passthrough (no sanitization)
     options.render.unsafe_ = true;
 
-    markdown_to_html(markdown, &options)
+    let html = markdown_to_html(markdown, &options);
+    replace_wikilinks(&html)
+}
+
+/// Replace Obsidian-style wiki-links with placeholder anchor elements.
+///
+/// - `[[slug]]` becomes `<a class="wikilink" data-slug="slug">[[slug]]</a>`
+/// - `[[slug|display text]]` becomes `<a class="wikilink" data-slug="slug">display text</a>`
+///
+/// This runs on the final HTML string, so it works regardless of any surrounding
+/// tags (e.g. `<p>`) that comrak may have inserted.
+fn replace_wikilinks(html: &str) -> String {
+    let re = Regex::new(r"\[\[([^\[\]|]+?)(?:\|([^\[\]]+?))?\]\]").unwrap();
+    re.replace_all(html, |caps: &regex::Captures| {
+        let slug = &caps[1];
+        match caps.get(2) {
+            Some(display) => {
+                format!(
+                    "<a class=\"wikilink\" data-slug=\"{slug}\">{}</a>",
+                    display.as_str()
+                )
+            }
+            None => {
+                format!("<a class=\"wikilink\" data-slug=\"{slug}\">[[{slug}]]</a>")
+            }
+        }
+    })
+    .into_owned()
 }
 
 /// Read a markdown file and render it to an HTML fragment.
@@ -141,5 +169,55 @@ mod tests {
     fn render_file_missing() {
         let result = render_file(Path::new("/nonexistent/file.md"));
         assert!(matches!(result, Err(RenderError::ReadFailed(_, _))));
+    }
+
+    // --- wiki-link tests ---
+
+    #[test]
+    fn wikilink_simple_slug() {
+        let html = replace_wikilinks("check [[my-page]] here");
+        assert_eq!(
+            html,
+            "check <a class=\"wikilink\" data-slug=\"my-page\">[[my-page]]</a> here"
+        );
+    }
+
+    #[test]
+    fn wikilink_with_display_text() {
+        let html = replace_wikilinks("see [[my-page|My Page]]");
+        assert_eq!(
+            html,
+            "see <a class=\"wikilink\" data-slug=\"my-page\">My Page</a>"
+        );
+    }
+
+    #[test]
+    fn wikilink_multiple_in_one_string() {
+        let html = replace_wikilinks("a [[one]] b [[two|Two]] c");
+        assert!(
+            html.contains("<a class=\"wikilink\" data-slug=\"one\">[[one]]</a>"),
+            "expected first wikilink, got: {html}"
+        );
+        assert!(
+            html.contains("<a class=\"wikilink\" data-slug=\"two\">Two</a>"),
+            "expected second wikilink, got: {html}"
+        );
+    }
+
+    #[test]
+    fn wikilink_none_passthrough() {
+        let input = "<p>No links here.</p>";
+        let html = replace_wikilinks(input);
+        assert_eq!(html, input);
+    }
+
+    #[test]
+    fn wikilink_inside_paragraph() {
+        let html = render_markdown("Check [[some-slug]] for details.");
+        assert!(
+            html.contains("<a class=\"wikilink\" data-slug=\"some-slug\">[[some-slug]]</a>"),
+            "expected wikilink inside <p>, got: {html}"
+        );
+        assert!(html.contains("<p>"), "expected paragraph wrapper, got: {html}");
     }
 }
