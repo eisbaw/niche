@@ -1,9 +1,10 @@
 ---
 id: TASK-0002
 title: 'M2: Nix Integration'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 22:03'
+updated_date: '2026-03-23 22:56'
 labels:
   - milestone
 dependencies:

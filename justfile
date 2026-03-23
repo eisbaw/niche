@@ -28,6 +28,10 @@ new slug:
     touch content/{{slug}}/post.md
     @echo "Created content/{{slug}}/"
 
+# Build the full site via Nix (compile + link + compose)
+site:
+    nix-build site.nix
+
 # End-to-end tests (placeholder)
 e2e:
     @echo "E2E tests not yet implemented"
