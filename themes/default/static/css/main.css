@@ -1,3 +1,42 @@
+/* ============================================================
+   main.css — Default theme for example-instance
+   Design tokens, reset, typography, layout, all components.
+   ============================================================ */
+
+/* === Font Faces === */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/fonts/Inter-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/static/fonts/Inter-SemiBold.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 750;
+  font-display: swap;
+  src: url("/static/fonts/Inter-Bold.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/fonts/JetBrainsMono-Regular.woff2") format("woff2");
+}
+
+/* === Design Tokens === */
 :root {
   /* Typography */
   --font-body: "Inter", system-ui, -apple-system, sans-serif;
@@ -33,7 +72,7 @@
   --space-xl: 2rem;
   --space-2xl: 2.5rem;
 
-  /* Colors -- light mode */
+  /* Colors — light mode */
   --color-text: #1a1a1a;
   --color-text-muted: #666;
   --color-bg: #fff;
@@ -63,4 +102,255 @@
     --color-accent-hover: #93bbfd;
     --color-code-bg: #2a2a2a;
   }
+}
+
+/* === Reset === */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* === Base === */
+html {
+  font-family: var(--font-body);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-body);
+  color: var(--color-text);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* === Layout === */
+.content {
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  padding: var(--space-xl) var(--container-padding);
+}
+
+/* === Site Header === */
+.site-header {
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.site-nav {
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  padding: var(--space-md) var(--container-padding);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.site-name {
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+  color: var(--color-text);
+}
+
+.site-nav ul {
+  display: flex;
+  gap: var(--space-lg);
+  list-style: none;
+}
+
+.site-nav a {
+  color: var(--color-text-muted);
+  text-decoration: none;
+  transition: color var(--transition-speed);
+}
+
+.site-nav a:hover,
+.site-nav a[aria-current="page"] {
+  color: var(--color-text);
+}
+
+/* === Typography === */
+h1, h2, h3, h4, h5, h6 {
+  line-height: var(--line-height-heading);
+  font-weight: var(--font-weight-semibold);
+  margin-top: var(--space-2xl);
+  margin-bottom: var(--space-sm);
+}
+
+h1 { font-size: var(--font-size-h1); }
+h2 { font-size: var(--font-size-h2); }
+h3 { font-size: var(--font-size-h3); }
+h4 { font-size: var(--font-size-h4); }
+
+p, ul, ol, blockquote, pre, table, figure, aside {
+  margin-bottom: var(--block-margin);
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  transition: color var(--transition-speed);
+}
+
+a:hover { color: var(--color-accent-hover); }
+
+/* === Post === */
+.post-header { margin-bottom: var(--space-xl); }
+.post-header h1 { margin-top: 0; }
+
+.post-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm) var(--space-md);
+  align-items: center;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin-top: var(--space-xs);
+}
+
+.tag-list {
+  display: flex;
+  gap: var(--space-xs);
+  list-style: none;
+}
+
+.tag-list a {
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font-size: var(--font-size-sm);
+}
+
+.tag-list a:hover { color: var(--color-accent); }
+
+/* === Post Content Elements === */
+.post-content blockquote {
+  border-left: var(--border-width) solid var(--color-border);
+  padding-left: var(--space-lg);
+  font-size: var(--font-size-lg);
+  font-style: italic;
+  line-height: var(--line-height-tight);
+  color: var(--color-text-muted);
+}
+
+.post-content code {
+  font-family: var(--font-code);
+  font-size: 0.9em;
+  background: var(--color-code-bg);
+  padding: 0.15em 0.35em;
+  border-radius: 3px;
+}
+
+.post-content pre {
+  background: var(--color-code-bg);
+  padding: var(--space-md);
+  border-radius: var(--border-radius);
+  overflow-x: auto;
+  line-height: 1.5;
+}
+
+.post-content pre code {
+  background: none;
+  padding: 0;
+  font-size: var(--font-size-sm);
+}
+
+.post-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--border-radius);
+}
+
+.post-content figure {
+  text-align: center;
+}
+
+.post-content figcaption {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  margin-top: var(--space-xs);
+}
+
+.post-content table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.post-content th,
+.post-content td {
+  padding: 0.55em 0.7em;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.post-content th {
+  font-weight: var(--font-weight-bold);
+}
+
+.post-content .callout {
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--border-radius);
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--block-margin);
+}
+
+.post-content .callout header {
+  font-weight: var(--font-weight-bold);
+  margin-bottom: var(--space-xs);
+}
+
+.post-content ul,
+.post-content ol {
+  padding-left: var(--space-lg);
+}
+
+.post-content li + li {
+  margin-top: 0.35em;
+}
+
+/* === Wiki-links === */
+.wikilink {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-decoration-style: dashed;
+}
+
+.wikilink.broken-link {
+  color: var(--color-error);
+  text-decoration: line-through;
+}
+
+/* === Post List (index) === */
+.post-list { display: flex; flex-direction: column; gap: var(--space-xl); }
+
+.post-summary h2 {
+  font-size: var(--font-size-h2);
+  margin: 0 0 var(--space-xs);
+}
+
+.post-summary h2 a {
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.post-summary h2 a:hover { color: var(--color-accent); }
+
+.post-summary .summary {
+  color: var(--color-text-muted);
+  margin-top: var(--space-xs);
+}
+
+/* === Pagination === */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-md);
+  margin-top: var(--space-2xl);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* === Footer === */
+.site-footer {
+  border-top: var(--border-width) solid var(--color-border);
+  max-width: var(--content-max-width);
+  margin: var(--space-2xl) auto 0;
+  padding: var(--space-md) var(--container-padding);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
 }

@@ -1,9 +1,10 @@
 ---
 id: TASK-0005
 title: 'M5: Theme and Polish'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 22:04'
+updated_date: '2026-03-23 23:18'
 labels:
   - milestone
 dependencies:
