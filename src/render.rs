@@ -3,9 +3,20 @@ use std::sync::LazyLock;
 
 use comrak::{Options, markdown_to_html};
 use regex::Regex;
+use syntect::html::ClassedHTMLGenerator;
+use syntect::parsing::SyntaxSet;
+use syntect::util::LinesWithEndings;
 
 static WIKILINK_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\[\[([^\[\]|]+?)(?:\|([^\[\]]+?))?\]\]").unwrap());
+
+/// Matches `<pre><code class="language-XXX">...code...</code></pre>` blocks produced by comrak.
+/// Captures: (1) the language name, (2) the code content (HTML-encoded).
+static CODE_BLOCK_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?s)<pre><code class="language-([^"]+)">(.*?)</code></pre>"#).unwrap()
+});
+
+static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
 
 /// Render markdown content to an HTML fragment.
 ///
@@ -28,7 +39,55 @@ pub fn render_markdown(markdown: &str) -> String {
     options.render.unsafe_ = true;
 
     let html = markdown_to_html(markdown, &options);
+    let html = highlight_code_blocks(&html);
     replace_wikilinks(&html)
+}
+
+/// Decode the basic HTML entities that comrak encodes inside `<code>` blocks.
+fn html_decode(s: &str) -> String {
+    s.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+}
+
+/// Post-process comrak HTML to apply syntect-based syntax highlighting to fenced code blocks.
+///
+/// Finds every `<pre><code class="language-XXX">...</code></pre>` block, looks up language XXX
+/// in syntect's default syntax set, and replaces the code content with `<span class="...">`
+/// wrapped tokens using `ClassedHTMLGenerator`.
+///
+/// If the language is not recognized, the block is left unchanged.
+/// Code blocks without a language annotation and inline `<code>` elements are not affected.
+fn highlight_code_blocks(html: &str) -> String {
+    CODE_BLOCK_RE
+        .replace_all(html, |caps: &regex::Captures| {
+            let lang = &caps[1];
+            let code_html = &caps[2];
+
+            // Look up the syntax; if not found, return the original block unchanged.
+            let syntax = match SYNTAX_SET.find_syntax_by_token(lang) {
+                Some(s) => s,
+                None => return caps[0].to_string(),
+            };
+
+            // Decode HTML entities so syntect sees the real source code.
+            let code = html_decode(code_html);
+
+            let mut generator = ClassedHTMLGenerator::new_with_class_style(
+                syntax,
+                &SYNTAX_SET,
+                syntect::html::ClassStyle::Spaced,
+            );
+            for line in LinesWithEndings::from(&code) {
+                // parse_html_for_line_which_includes_newline cannot fail for valid syntaxes.
+                let _ = generator.parse_html_for_line_which_includes_newline(line);
+            }
+            let highlighted = generator.finalize();
+
+            format!("<pre><code class=\"language-{lang}\">{highlighted}</code></pre>")
+        })
+        .into_owned()
 }
 
 /// Escape characters that are special in HTML attribute values and content.
@@ -242,6 +301,69 @@ mod tests {
         assert!(
             html.contains("<p>"),
             "expected paragraph wrapper, got: {html}"
+        );
+    }
+
+    // --- syntax highlighting tests ---
+
+    #[test]
+    fn highlight_known_language() {
+        let md = "```rust\nfn main() {}\n```";
+        let html = render_markdown(md);
+        // Should contain syntect span elements inside the code block.
+        assert!(
+            html.contains("<span class="),
+            "expected highlighted spans for Rust code, got: {html}"
+        );
+        // Should preserve the language class on the wrapper.
+        assert!(
+            html.contains("class=\"language-rust\""),
+            "expected language-rust class, got: {html}"
+        );
+    }
+
+    #[test]
+    fn highlight_unknown_language_passthrough() {
+        let md = "```nosuchlanguage\nsome code\n```";
+        let html = render_markdown(md);
+        // Should still have the code block, just without span-based highlighting.
+        assert!(
+            html.contains("<pre><code class=\"language-nosuchlanguage\">some code"),
+            "expected unchanged code block for unknown language, got: {html}"
+        );
+        assert!(
+            !html.contains("<span class="),
+            "should not contain highlighted spans for unknown language, got: {html}"
+        );
+    }
+
+    #[test]
+    fn highlight_no_language_passthrough() {
+        let md = "```\nplain code\n```";
+        let html = render_markdown(md);
+        // comrak emits <pre><code> without a class for un-annotated blocks.
+        assert!(
+            html.contains("<pre><code>plain code"),
+            "expected plain code block without language, got: {html}"
+        );
+        assert!(
+            !html.contains("<span class="),
+            "should not contain highlighted spans for no-language block, got: {html}"
+        );
+    }
+
+    #[test]
+    fn highlight_does_not_affect_inline_code() {
+        let md = "Use `fn main()` in Rust.";
+        let html = render_markdown(md);
+        // Inline code should be <code>...</code> without <pre> wrapper.
+        assert!(
+            html.contains("<code>fn main()</code>"),
+            "expected inline code untouched, got: {html}"
+        );
+        assert!(
+            !html.contains("<span class="),
+            "should not contain highlighted spans for inline code, got: {html}"
         );
     }
 }
