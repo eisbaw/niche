@@ -3,6 +3,7 @@ use std::process;
 
 use clap::{Parser, Subcommand};
 
+mod computed;
 mod config;
 mod render;
 
@@ -85,7 +86,7 @@ fn main() {
             content,
             out,
         } => {
-            let _post_config = match config::PostConfig::from_file(config) {
+            let post_config = match config::PostConfig::from_file(config) {
                 Ok(c) => c,
                 Err(e) => {
                     eprintln!("Error: {e}");
@@ -102,6 +103,17 @@ fn main() {
             };
 
             match render::write_html(&html, out) {
+                Ok(path) => {
+                    println!("{}", path.display());
+                }
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    process::exit(1);
+                }
+            }
+
+            let computed_json = computed::build_computed_json(&post_config, &html);
+            match computed::write_computed_json(&computed_json, out) {
                 Ok(path) => {
                     println!("{}", path.display());
                 }
