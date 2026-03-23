@@ -1,3 +1,4 @@
+pub mod compose;
 pub mod computed;
 pub mod config;
 pub mod link;
@@ -12,6 +13,7 @@ pub enum PipelineError {
     Render(render::RenderError),
     Computed(computed::ComputedError),
     Link(link::LinkError),
+    Compose(compose::ComposeError),
 }
 
 impl std::fmt::Display for PipelineError {
@@ -21,6 +23,7 @@ impl std::fmt::Display for PipelineError {
             Self::Render(e) => write!(f, "{e}"),
             Self::Computed(e) => write!(f, "{e}"),
             Self::Link(e) => write!(f, "{e}"),
+            Self::Compose(e) => write!(f, "{e}"),
         }
     }
 }
@@ -51,6 +54,13 @@ impl From<link::LinkError> for PipelineError {
     }
 }
 
+impl From<compose::ComposeError> for PipelineError {
+    fn from(e: compose::ComposeError) -> Self {
+        Self::Compose(e)
+    }
+}
+
+pub use compose::run_compose;
 pub use link::run_link;
 
 /// Run the full render pipeline: read config + content, produce content.html and computed.json.

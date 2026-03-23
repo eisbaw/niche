@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="{{ site.language }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ site.site_name }}{% endblock %}</title>
+
+  {% if post %}
+  <meta name="description" content="{{ post.summary }}">
+  <meta property="og:title" content="{{ post.title }}">
+  <meta property="og:description" content="{{ post.summary }}">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="{{ site.base_url }}{{ current_url }}">
+  {% endif %}
+
+  <link rel="canonical" href="{{ site.base_url }}{{ current_url }}">
+  <link rel="alternate" type="application/atom+xml" href="{{ site.base_url }}/feed.xml"
+        title="{{ site.site_name }}">
+  <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+
+  <header class="site-header">
+    <nav class="site-nav">
+      <a class="site-name" href="/">{{ site.site_name }}</a>
+      <ul>
+        {% for item in site.nav %}
+        <li><a href="{{ item.url }}"
+               {% if current_url == item.url %}aria-current="page"{% endif %}
+               >{{ item.label }}</a></li>
+        {% endfor %}
+      </ul>
+    </nav>
+  </header>
+
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <p>&copy; {{ site.author.name }}</p>
+  </footer>
+
+</body>
+</html>

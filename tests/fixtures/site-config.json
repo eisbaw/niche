@@ -1,0 +1,20 @@
+{
+  "site_name": "Test Blog",
+  "base_url": "https://example.com",
+  "language": "en",
+  "posts_per_page": 10,
+  "nav": [
+    {"label": "Home", "url": "/"},
+    {"label": "Archive", "url": "/archive/"},
+    {"label": "About", "url": "/about/"}
+  ],
+  "feed": {
+    "enable": true,
+    "title": "Test Blog",
+    "description": "A test blog for integration tests."
+  },
+  "author": {
+    "name": "Test Author",
+    "email": "test@example.com"
+  }
+}

@@ -115,9 +115,7 @@ pub fn run_link(
             let (resolved, broken) = resolve_wikilinks(&html, &registry);
 
             for broken_slug in &broken {
-                eprintln!(
-                    "warning: broken link to '{broken_slug}' in post '{slug}'"
-                );
+                eprintln!("warning: broken link to '{broken_slug}' in post '{slug}'");
             }
 
             std::fs::write(post_out_dir.join("content.html"), &resolved)
@@ -147,9 +145,7 @@ pub fn run_link(
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), LinkError> {
     std::fs::create_dir_all(dst).map_err(|e| LinkError::WriteFailed(dst.to_path_buf(), e))?;
 
-    for entry in
-        std::fs::read_dir(src).map_err(|e| LinkError::ReadFailed(src.to_path_buf(), e))?
-    {
+    for entry in std::fs::read_dir(src).map_err(|e| LinkError::ReadFailed(src.to_path_buf(), e))? {
         let entry = entry.map_err(|e| LinkError::ReadFailed(src.to_path_buf(), e))?;
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
@@ -157,8 +153,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), LinkError> {
         if src_path.is_dir() {
             copy_dir_recursive(&src_path, &dst_path)?;
         } else {
-            std::fs::copy(&src_path, &dst_path)
-                .map_err(|e| LinkError::WriteFailed(dst_path, e))?;
+            std::fs::copy(&src_path, &dst_path).map_err(|e| LinkError::WriteFailed(dst_path, e))?;
         }
     }
 
@@ -226,20 +221,15 @@ mod tests {
 
     #[test]
     fn resolves_known_slug_with_custom_display() {
-        let html =
-            r#"<a class="wikilink" data-slug="second-post">click here</a>"#;
+        let html = r#"<a class="wikilink" data-slug="second-post">click here</a>"#;
         let (resolved, broken) = resolve_wikilinks(html, &sample_registry());
-        assert_eq!(
-            resolved,
-            r#"<a href="/posts/second-post/">click here</a>"#
-        );
+        assert_eq!(resolved, r#"<a href="/posts/second-post/">click here</a>"#);
         assert!(broken.is_empty());
     }
 
     #[test]
     fn broken_link_adds_class_and_reports() {
-        let html =
-            r#"<a class="wikilink" data-slug="nonexistent">[[nonexistent]]</a>"#;
+        let html = r#"<a class="wikilink" data-slug="nonexistent">[[nonexistent]]</a>"#;
         let (resolved, broken) = resolve_wikilinks(html, &sample_registry());
         assert_eq!(
             resolved,
@@ -320,8 +310,7 @@ mod tests {
         );
 
         // Check computed.json copied
-        let computed =
-            std::fs::read_to_string(out_dir.join("hello-world/computed.json")).unwrap();
+        let computed = std::fs::read_to_string(out_dir.join("hello-world/computed.json")).unwrap();
         assert_eq!(computed, r#"{"slug":"hello-world"}"#);
 
         // Check assets copied

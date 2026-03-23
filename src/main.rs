@@ -3,7 +3,7 @@ use std::process;
 
 use clap::{Parser, Subcommand};
 
-use post2html::{run_link, run_render};
+use post2html::{run_compose, run_link, run_render};
 
 #[derive(Parser)]
 #[command(name = "post2html", about = "Static site generator pipeline")]
@@ -114,16 +114,17 @@ fn main() {
             template_dir,
             static_dir,
             out,
-        } => {
-            println!(
-                "compose: config={} posts_dir={} template_dir={} static_dir={} out={}",
-                config.display(),
-                posts_dir.display(),
-                template_dir.display(),
-                static_dir.display(),
-                out.display()
-            );
-        }
+        } => match run_compose(config, posts_dir, template_dir, static_dir, out) {
+            Ok(paths) => {
+                for path in &paths {
+                    println!("{}", path.display());
+                }
+            }
+            Err(e) => {
+                eprintln!("Error: {e}");
+                process::exit(1);
+            }
+        },
         Command::Clean { out } => {
             println!("clean: out={}", out.display());
         }
