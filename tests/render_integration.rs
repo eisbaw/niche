@@ -8,7 +8,12 @@ use post2html::config::PostConfig;
 fn setup_fixture(
     config_json: &str,
     markdown: &str,
-) -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
+) -> (
+    tempfile::TempDir,
+    std::path::PathBuf,
+    std::path::PathBuf,
+    std::path::PathBuf,
+) {
     let tmp = tempfile::tempdir().expect("failed to create temp dir");
     let config_path = tmp.path().join("config.json");
     let content_path = tmp.path().join("content.md");

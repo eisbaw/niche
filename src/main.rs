@@ -3,7 +3,7 @@ use std::process;
 
 use clap::{Parser, Subcommand};
 
-use post2html::{computed, config, render};
+use post2html::run_render;
 
 #[derive(Parser)]
 #[command(name = "post2html", about = "Static site generator pipeline")]
@@ -83,44 +83,16 @@ fn main() {
             config,
             content,
             out,
-        } => {
-            let post_config = match config::PostConfig::from_file(config) {
-                Ok(c) => c,
-                Err(e) => {
-                    eprintln!("Error: {e}");
-                    process::exit(1);
-                }
-            };
-
-            let html = match render::render_file(content) {
-                Ok(h) => h,
-                Err(e) => {
-                    eprintln!("Error: {e}");
-                    process::exit(1);
-                }
-            };
-
-            match render::write_html(&html, out) {
-                Ok(path) => {
-                    println!("{}", path.display());
-                }
-                Err(e) => {
-                    eprintln!("Error: {e}");
-                    process::exit(1);
-                }
+        } => match run_render(config, content, out) {
+            Ok((html_path, json_path)) => {
+                println!("{}", html_path.display());
+                println!("{}", json_path.display());
             }
-
-            let computed_json = computed::build_computed_json(&post_config, &html);
-            match computed::write_computed_json(&computed_json, out) {
-                Ok(path) => {
-                    println!("{}", path.display());
-                }
-                Err(e) => {
-                    eprintln!("Error: {e}");
-                    process::exit(1);
-                }
+            Err(e) => {
+                eprintln!("Error: {e}");
+                process::exit(1);
             }
-        }
+        },
         Command::Link {
             links,
             posts_dir,

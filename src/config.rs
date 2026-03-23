@@ -31,8 +31,12 @@ pub enum PostConfigError {
 impl std::fmt::Display for PostConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::ReadFailed(path, err) => write!(f, "failed to read config file {}: {err}", path.display()),
-            Self::ParseFailed(path, err) => write!(f, "failed to parse config file {}: {err}", path.display()),
+            Self::ReadFailed(path, err) => {
+                write!(f, "failed to read config file {}: {err}", path.display())
+            }
+            Self::ParseFailed(path, err) => {
+                write!(f, "failed to parse config file {}: {err}", path.display())
+            }
         }
     }
 }
@@ -67,7 +71,10 @@ mod tests {
         let result: Result<PostConfig, _> = serde_json::from_str(json);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("date"), "error should mention missing 'date' field: {err}");
+        assert!(
+            err.contains("date"),
+            "error should mention missing 'date' field: {err}"
+        );
     }
 
     #[test]

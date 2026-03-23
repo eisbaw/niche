@@ -61,10 +61,7 @@ pub fn build_computed_json(config: &PostConfig, html: &str) -> Value {
 
     // Computed fields
     map.insert("word_count".into(), Value::Number(wc.into()));
-    map.insert(
-        "reading_time_minutes".into(),
-        Value::Number(rt.into()),
-    );
+    map.insert("reading_time_minutes".into(), Value::Number(rt.into()));
 
     Value::Object(map)
 }
@@ -78,8 +75,8 @@ pub fn write_computed_json(
         .map_err(|e| ComputedError::WriteFailed(out_dir.to_path_buf(), e))?;
 
     let out_path = out_dir.join("computed.json");
-    let pretty = serde_json::to_string_pretty(json)
-        .expect("serializing computed JSON should never fail");
+    let pretty =
+        serde_json::to_string_pretty(json).expect("serializing computed JSON should never fail");
 
     std::fs::write(&out_path, pretty)
         .map_err(|e| ComputedError::WriteFailed(out_path.clone(), e))?;
@@ -198,7 +195,10 @@ mod tests {
             date: "2024-01-15".into(),
             extra: {
                 let mut m = std::collections::HashMap::new();
-                m.insert("tags".into(), Value::Array(vec![Value::String("rust".into())]));
+                m.insert(
+                    "tags".into(),
+                    Value::Array(vec![Value::String("rust".into())]),
+                );
                 m
             },
         };
@@ -209,7 +209,10 @@ mod tests {
         assert_eq!(obj["slug"], "test-post");
         assert_eq!(obj["title"], "Test Post");
         assert_eq!(obj["date"], "2024-01-15");
-        assert_eq!(obj["tags"], Value::Array(vec![Value::String("rust".into())]));
+        assert_eq!(
+            obj["tags"],
+            Value::Array(vec![Value::String("rust".into())])
+        );
         assert_eq!(obj["word_count"], 10);
         assert_eq!(obj["reading_time_minutes"], 1);
     }

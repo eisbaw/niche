@@ -1,7 +1,11 @@
 use std::path::Path;
+use std::sync::LazyLock;
 
-use comrak::{markdown_to_html, Options};
+use comrak::{Options, markdown_to_html};
 use regex::Regex;
+
+static WIKILINK_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\[\[([^\[\]|]+?)(?:\|([^\[\]]+?))?\]\]").unwrap());
 
 /// Render markdown content to an HTML fragment.
 ///
@@ -27,30 +31,48 @@ pub fn render_markdown(markdown: &str) -> String {
     replace_wikilinks(&html)
 }
 
+/// Escape characters that are special in HTML attribute values and content.
+fn html_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '"' => out.push_str("&quot;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 /// Replace Obsidian-style wiki-links with placeholder anchor elements.
 ///
 /// - `[[slug]]` becomes `<a class="wikilink" data-slug="slug">[[slug]]</a>`
 /// - `[[slug|display text]]` becomes `<a class="wikilink" data-slug="slug">display text</a>`
 ///
+/// The slug value is HTML-escaped before interpolation into the `data-slug` attribute.
+///
 /// This runs on the final HTML string, so it works regardless of any surrounding
 /// tags (e.g. `<p>`) that comrak may have inserted.
 fn replace_wikilinks(html: &str) -> String {
-    let re = Regex::new(r"\[\[([^\[\]|]+?)(?:\|([^\[\]]+?))?\]\]").unwrap();
-    re.replace_all(html, |caps: &regex::Captures| {
-        let slug = &caps[1];
-        match caps.get(2) {
-            Some(display) => {
-                format!(
-                    "<a class=\"wikilink\" data-slug=\"{slug}\">{}</a>",
-                    display.as_str()
-                )
+    WIKILINK_RE
+        .replace_all(html, |caps: &regex::Captures| {
+            let slug = &caps[1];
+            let escaped_slug = html_escape(slug);
+            match caps.get(2) {
+                Some(display) => {
+                    format!(
+                        "<a class=\"wikilink\" data-slug=\"{escaped_slug}\">{}</a>",
+                        display.as_str()
+                    )
+                }
+                None => {
+                    format!("<a class=\"wikilink\" data-slug=\"{escaped_slug}\">[[{slug}]]</a>")
+                }
             }
-            None => {
-                format!("<a class=\"wikilink\" data-slug=\"{slug}\">[[{slug}]]</a>")
-            }
-        }
-    })
-    .into_owned()
+        })
+        .into_owned()
 }
 
 /// Read a markdown file and render it to an HTML fragment.
@@ -86,8 +108,7 @@ pub fn write_html(html: &str, out_dir: &Path) -> Result<std::path::PathBuf, Rend
     std::fs::create_dir_all(out_dir)
         .map_err(|e| RenderError::WriteFailed(out_dir.to_path_buf(), e))?;
     let out_path = out_dir.join("content.html");
-    std::fs::write(&out_path, html)
-        .map_err(|e| RenderError::WriteFailed(out_path.clone(), e))?;
+    std::fs::write(&out_path, html).map_err(|e| RenderError::WriteFailed(out_path.clone(), e))?;
     Ok(out_path)
 }
 
@@ -218,6 +239,9 @@ mod tests {
             html.contains("<a class=\"wikilink\" data-slug=\"some-slug\">[[some-slug]]</a>"),
             "expected wikilink inside <p>, got: {html}"
         );
-        assert!(html.contains("<p>"), "expected paragraph wrapper, got: {html}");
+        assert!(
+            html.contains("<p>"),
+            "expected paragraph wrapper, got: {html}"
+        );
     }
 }
