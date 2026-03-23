@@ -1,9 +1,10 @@
 ---
 id: TASK-0001
 title: 'M1: Rust Binary Skeleton'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 22:02'
+updated_date: '2026-03-23 22:36'
 labels:
   - milestone
 dependencies: []

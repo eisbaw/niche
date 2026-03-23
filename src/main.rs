@@ -3,9 +3,7 @@ use std::process;
 
 use clap::{Parser, Subcommand};
 
-mod computed;
-mod config;
-mod render;
+use post2html::{computed, config, render};
 
 #[derive(Parser)]
 #[command(name = "post2html", about = "Static site generator pipeline")]
