@@ -1,6 +1,7 @@
 pub mod compose;
 pub mod computed;
 pub mod config;
+pub mod fs_utils;
 pub mod link;
 pub mod render;
 

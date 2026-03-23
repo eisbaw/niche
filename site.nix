@@ -59,9 +59,9 @@ let
   # deduplicates. Compare the count of input posts vs output attr names.
   slugCount = builtins.length (builtins.attrNames linksAttrs);
   postCount = builtins.length posts;
-  _slugCheck = assert slugCount == postCount
-    || builtins.throw "Duplicate slugs detected: ${toString postCount} posts but only ${toString slugCount} unique slugs";
-    true;
+  _slugCheck = if slugCount != postCount
+    then builtins.throw "Duplicate slugs detected: ${toString postCount} posts but only ${toString slugCount} unique slugs"
+    else true;
 
   linksJson = pkgs.writeText "links.json" (builtins.toJSON linksAttrs);
 

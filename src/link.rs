@@ -106,21 +106,22 @@ pub fn run_link(
         std::fs::create_dir_all(&post_out_dir)
             .map_err(|e| LinkError::WriteFailed(post_out_dir.clone(), e))?;
 
-        // Resolve wikilinks in content.html
+        // Resolve wikilinks in content.html (must exist for a valid post)
         let content_path = entry_path.join("content.html");
-        if content_path.exists() {
-            let html = std::fs::read_to_string(&content_path)
-                .map_err(|e| LinkError::ReadFailed(content_path.clone(), e))?;
-
-            let (resolved, broken) = resolve_wikilinks(&html, &registry);
-
-            for broken_slug in &broken {
-                eprintln!("warning: broken link to '{broken_slug}' in post '{slug}'");
-            }
-
-            std::fs::write(post_out_dir.join("content.html"), &resolved)
-                .map_err(|e| LinkError::WriteFailed(post_out_dir.join("content.html"), e))?;
+        if !content_path.exists() {
+            return Err(LinkError::MissingContent(entry_path.clone()));
         }
+        let html = std::fs::read_to_string(&content_path)
+            .map_err(|e| LinkError::ReadFailed(content_path.clone(), e))?;
+
+        let (resolved, broken) = resolve_wikilinks(&html, &registry);
+
+        for broken_slug in &broken {
+            eprintln!("warning: broken link to '{broken_slug}' in post '{slug}'");
+        }
+
+        std::fs::write(post_out_dir.join("content.html"), &resolved)
+            .map_err(|e| LinkError::WriteFailed(post_out_dir.join("content.html"), e))?;
 
         // Copy computed.json unchanged
         let computed_path = entry_path.join("computed.json");
@@ -132,7 +133,9 @@ pub fn run_link(
         // Copy assets/ directory unchanged
         let assets_path = entry_path.join("assets");
         if assets_path.is_dir() {
-            copy_dir_recursive(&assets_path, &post_out_dir.join("assets"))?;
+            let assets_dst = post_out_dir.join("assets");
+            crate::fs_utils::copy_dir_recursive(&assets_path, &assets_dst)
+                .map_err(|e| LinkError::WriteFailed(assets_dst, e))?;
         }
 
         output_dirs.push(post_out_dir);
@@ -141,30 +144,12 @@ pub fn run_link(
     Ok(output_dirs)
 }
 
-/// Recursively copy a directory and its contents.
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), LinkError> {
-    std::fs::create_dir_all(dst).map_err(|e| LinkError::WriteFailed(dst.to_path_buf(), e))?;
-
-    for entry in std::fs::read_dir(src).map_err(|e| LinkError::ReadFailed(src.to_path_buf(), e))? {
-        let entry = entry.map_err(|e| LinkError::ReadFailed(src.to_path_buf(), e))?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-
-        if src_path.is_dir() {
-            copy_dir_recursive(&src_path, &dst_path)?;
-        } else {
-            std::fs::copy(&src_path, &dst_path).map_err(|e| LinkError::WriteFailed(dst_path, e))?;
-        }
-    }
-
-    Ok(())
-}
-
 #[derive(Debug)]
 pub enum LinkError {
     ReadFailed(PathBuf, std::io::Error),
     WriteFailed(PathBuf, std::io::Error),
     InvalidJson(PathBuf, serde_json::Error),
+    MissingContent(PathBuf),
 }
 
 impl std::fmt::Display for LinkError {
@@ -178,6 +163,13 @@ impl std::fmt::Display for LinkError {
             }
             Self::InvalidJson(path, err) => {
                 write!(f, "invalid JSON in {}: {err}", path.display())
+            }
+            Self::MissingContent(path) => {
+                write!(
+                    f,
+                    "missing content.html in post directory {}",
+                    path.display()
+                )
             }
         }
     }

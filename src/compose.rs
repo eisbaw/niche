@@ -8,7 +8,7 @@ use tera::{Context, Tera};
 // Site config types
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 pub struct SiteConfig {
     pub site_name: String,
     pub base_url: String,
@@ -149,7 +149,8 @@ pub fn run_compose(
     let mut output_paths = Vec::new();
 
     // Build a serializable site context value that Tera can consume.
-    let site_value = build_site_value(&site_config);
+    let site_value =
+        serde_json::to_value(&site_config).expect("SiteConfig serialization should not fail");
 
     // --- Render individual post pages ---
     for post in &posts {
@@ -179,7 +180,7 @@ pub fn run_compose(
         output_paths.push(index_path);
     }
 
-    // --- Render index page (first page of posts) ---
+    // --- Render all paginated index pages ---
     {
         let posts_per_page = site_config.posts_per_page;
         let total_posts = posts.len();
@@ -189,43 +190,66 @@ pub fn run_compose(
             total_posts.div_ceil(posts_per_page)
         };
 
-        let page_posts: Vec<&Value> = posts
-            .iter()
-            .take(posts_per_page)
-            .map(|p| &p.metadata)
-            .collect();
+        for page_num in 1..=total_pages {
+            let start = (page_num - 1) * posts_per_page;
+            let end = (start + posts_per_page).min(total_posts);
 
-        let pagination = Pagination {
-            current: 1,
-            total_pages,
-            prev_url: None,
-            next_url: if total_pages > 1 {
-                Some("/page/2/".to_string())
+            let page_posts: Vec<&Value> = posts[start..end].iter().map(|p| &p.metadata).collect();
+
+            let prev_url = match page_num {
+                1 => None,
+                2 => Some("/".to_string()),
+                n => Some(format!("/page/{}/", n - 1)),
+            };
+
+            let next_url = if page_num < total_pages {
+                Some(format!("/page/{}/", page_num + 1))
             } else {
                 None
-            },
-        };
+            };
 
-        let mut context = Context::new();
-        context.insert("site", &site_value);
-        context.insert("current_url", &"/");
-        context.insert("posts", &page_posts);
-        context.insert("pagination", &pagination);
+            let pagination = Pagination {
+                current: page_num,
+                total_pages,
+                prev_url,
+                next_url,
+            };
 
-        let rendered = tera.render("index.html", &context)?;
-        let index_path = out_dir.join("index.html");
-        std::fs::create_dir_all(out_dir)
-            .map_err(|e| ComposeError::WriteFailed(out_dir.to_path_buf(), e))?;
-        std::fs::write(&index_path, &rendered)
-            .map_err(|e| ComposeError::WriteFailed(index_path.clone(), e))?;
+            let current_url = if page_num == 1 {
+                "/".to_string()
+            } else {
+                format!("/page/{}/", page_num)
+            };
 
-        output_paths.push(index_path);
+            let mut context = Context::new();
+            context.insert("site", &site_value);
+            context.insert("current_url", &current_url);
+            context.insert("posts", &page_posts);
+            context.insert("pagination", &pagination);
+
+            let rendered = tera.render("index.html", &context)?;
+
+            let page_dir = if page_num == 1 {
+                out_dir.to_path_buf()
+            } else {
+                out_dir.join(format!("page/{}", page_num))
+            };
+            std::fs::create_dir_all(&page_dir)
+                .map_err(|e| ComposeError::WriteFailed(page_dir.clone(), e))?;
+
+            let index_path = page_dir.join("index.html");
+            std::fs::write(&index_path, &rendered)
+                .map_err(|e| ComposeError::WriteFailed(index_path.clone(), e))?;
+
+            output_paths.push(index_path);
+        }
     }
 
     // --- Copy static assets ---
     if static_dir.is_dir() {
         let static_out = out_dir.join("static");
-        copy_dir_recursive(static_dir, &static_out)?;
+        crate::fs_utils::copy_dir_recursive(static_dir, &static_out)
+            .map_err(|e| ComposeError::WriteFailed(static_out.clone(), e))?;
     }
 
     Ok(output_paths)
@@ -304,71 +328,6 @@ fn load_templates(template_dir: &Path) -> Result<Tera, ComposeError> {
         .to_string();
     let tera = Tera::new(&glob)?;
     Ok(tera)
-}
-
-/// Build a serde_json::Value representing the site config for use in templates.
-fn build_site_value(config: &SiteConfig) -> Value {
-    let mut map = serde_json::Map::new();
-    map.insert("site_name".into(), Value::String(config.site_name.clone()));
-    map.insert("base_url".into(), Value::String(config.base_url.clone()));
-    map.insert("language".into(), Value::String(config.language.clone()));
-    map.insert(
-        "posts_per_page".into(),
-        Value::Number(config.posts_per_page.into()),
-    );
-
-    // nav
-    let nav: Vec<Value> = config
-        .nav
-        .iter()
-        .map(|item| {
-            serde_json::json!({
-                "label": item.label,
-                "url": item.url,
-            })
-        })
-        .collect();
-    map.insert("nav".into(), Value::Array(nav));
-
-    // author
-    if let Some(author) = &config.author {
-        let mut author_map = serde_json::Map::new();
-        author_map.insert("name".into(), Value::String(author.name.clone()));
-        if let Some(email) = &author.email {
-            author_map.insert("email".into(), Value::String(email.clone()));
-        }
-        map.insert("author".into(), Value::Object(author_map));
-    }
-
-    // feed
-    if let Some(feed) = &config.feed {
-        let feed_val = serde_json::to_value(feed).unwrap_or(Value::Null);
-        map.insert("feed".into(), feed_val);
-    }
-
-    Value::Object(map)
-}
-
-/// Recursively copy a directory and its contents.
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), ComposeError> {
-    std::fs::create_dir_all(dst).map_err(|e| ComposeError::WriteFailed(dst.to_path_buf(), e))?;
-
-    for entry in
-        std::fs::read_dir(src).map_err(|e| ComposeError::ReadFailed(src.to_path_buf(), e))?
-    {
-        let entry = entry.map_err(|e| ComposeError::ReadFailed(src.to_path_buf(), e))?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-
-        if src_path.is_dir() {
-            copy_dir_recursive(&src_path, &dst_path)?;
-        } else {
-            std::fs::copy(&src_path, &dst_path)
-                .map_err(|e| ComposeError::WriteFailed(dst_path, e))?;
-        }
-    }
-
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
