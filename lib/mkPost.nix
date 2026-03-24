@@ -5,6 +5,9 @@
 #
 # postDir must contain meta.nix and a content file (post.md, post.rst, post.html, or post.txt).
 # The compiled derivation runs post2html render and copies assets if present.
+#
+# If postDir contains a figures.nix, it is built and its output is copied
+# into assets/ (merged with any static assets/ directory).
 
 { pkgs, post2html }:
 
@@ -21,6 +24,8 @@ let
   configFile = pkgs.writeText "post-config-${meta.slug}.json" (builtins.toJSON meta);
 
   hasAssets = builtins.pathExists (postDir + "/assets");
+  hasFigures = builtins.pathExists (postDir + "/figures.nix");
+  figures = if hasFigures then import (postDir + "/figures.nix") { inherit pkgs; } else null;
 
 in
 {
@@ -34,5 +39,9 @@ in
       --out $out
     ${pkgs.lib.optionalString hasAssets
       "cp -r ${postDir + "/assets"} $out/assets"}
+    ${pkgs.lib.optionalString hasFigures ''
+      mkdir -p $out/assets
+      cp -r ${figures}/* $out/assets/
+    ''}
   '';
 }

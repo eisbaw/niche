@@ -62,6 +62,8 @@ struct PostEntry {
     metadata: Value,
     /// HTML fragment from content.html.
     content: String,
+    /// Path to the post's source directory in posts-dir (for copying assets).
+    source_dir: std::path::PathBuf,
 }
 
 // ---------------------------------------------------------------------------
@@ -276,6 +278,14 @@ pub fn run_compose(
             .map_err(|e| ComposeError::WriteFailed(index_path.clone(), e))?;
 
         output_paths.push(index_path);
+
+        // Copy per-post assets (images, SVGs, etc.) if present.
+        let assets_src = post.source_dir.join("assets");
+        if assets_src.is_dir() {
+            let assets_dst = post_out_dir.join("assets");
+            crate::fs_utils::copy_dir_recursive(&assets_src, &assets_dst)
+                .map_err(|e| ComposeError::WriteFailed(assets_dst.clone(), e))?;
+        }
     }
 
     // --- Render all paginated index pages ---
@@ -552,6 +562,7 @@ fn load_posts(posts_dir: &Path) -> Result<Vec<PostEntry>, ComposeError> {
             slug,
             metadata,
             content,
+            source_dir: entry_path,
         });
     }
 
@@ -1066,16 +1077,19 @@ mod tests {
                 slug: "a".into(),
                 metadata: serde_json::json!({"tags": ["rust", "nix"]}),
                 content: String::new(),
+                source_dir: std::path::PathBuf::new(),
             },
             PostEntry {
                 slug: "b".into(),
                 metadata: serde_json::json!({"tags": ["rust"]}),
                 content: String::new(),
+                source_dir: std::path::PathBuf::new(),
             },
             PostEntry {
                 slug: "c".into(),
                 metadata: serde_json::json!({}),
                 content: String::new(),
+                source_dir: std::path::PathBuf::new(),
             },
         ];
         let tags = collect_tags(&posts);
@@ -1097,16 +1111,19 @@ mod tests {
                 slug: "a".into(),
                 metadata: serde_json::json!({"tags": ["rust", "nix"]}),
                 content: String::new(),
+                source_dir: std::path::PathBuf::new(),
             },
             PostEntry {
                 slug: "b".into(),
                 metadata: serde_json::json!({"tags": ["rust"]}),
                 content: String::new(),
+                source_dir: std::path::PathBuf::new(),
             },
             PostEntry {
                 slug: "c".into(),
                 metadata: serde_json::json!({"tags": ["nix"]}),
                 content: String::new(),
+                source_dir: std::path::PathBuf::new(),
             },
         ];
         let rust_posts = posts_with_tag(&posts, "rust");
@@ -1160,16 +1177,19 @@ mod tests {
                 slug: "a".into(),
                 metadata: serde_json::json!({"date": "2024-04-01", "title": "A"}),
                 content: String::new(),
+                source_dir: std::path::PathBuf::new(),
             },
             PostEntry {
                 slug: "b".into(),
                 metadata: serde_json::json!({"date": "2024-01-15", "title": "B"}),
                 content: String::new(),
+                source_dir: std::path::PathBuf::new(),
             },
             PostEntry {
                 slug: "c".into(),
                 metadata: serde_json::json!({"date": "2023-06-01", "title": "C"}),
                 content: String::new(),
+                source_dir: std::path::PathBuf::new(),
             },
         ];
         let years = group_posts_by_year(&posts);
