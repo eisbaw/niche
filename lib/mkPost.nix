@@ -14,12 +14,7 @@ let
   meta = import (postDir + "/meta.nix");
 
   # Find the content file by extension priority: .md > .rst > .html > .txt
-  contentFile =
-    if builtins.pathExists (postDir + "/post.md") then postDir + "/post.md"
-    else if builtins.pathExists (postDir + "/post.rst") then postDir + "/post.rst"
-    else if builtins.pathExists (postDir + "/post.html") then postDir + "/post.html"
-    else if builtins.pathExists (postDir + "/post.txt") then postDir + "/post.txt"
-    else builtins.throw "No content file found in ${toString postDir}";
+  contentFile = import ./resolveContent.nix postDir;
 
   # Write config JSON to the Nix store — never interpolated into shell strings.
   # This avoids shell escaping bugs with titles containing quotes, backslashes, or $.
