@@ -13,10 +13,22 @@ let
   # -------------------------------------------------------------------------
   # Phase 0: Build the Rust binary as a Nix derivation
   # -------------------------------------------------------------------------
+  # Filter source to only Rust build files — content/ and theme/ changes
+  # must NOT invalidate the binary (that would defeat per-post caching).
+  rustSrc = pkgs.lib.cleanSourceWith {
+    src = ./.;
+    filter = path: type:
+      let baseName = builtins.baseNameOf path;
+      in
+        baseName == "Cargo.toml" ||
+        baseName == "Cargo.lock" ||
+        pkgs.lib.hasPrefix (toString ./src) path;
+  };
+
   post2html = pkgs.rustPlatform.buildRustPackage {
     pname = "post2html";
     version = "0.1.0";
-    src = pkgs.lib.cleanSource ./.;
+    src = rustSrc;
     cargoLock.lockFile = ./Cargo.lock;
   };
 
