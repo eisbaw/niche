@@ -71,10 +71,9 @@ pub fn run_render(
     config_path: &Path,
     content_path: &Path,
     out_dir: &Path,
-    assets_dir: Option<&Path>,
 ) -> Result<(std::path::PathBuf, std::path::PathBuf), PipelineError> {
     let post_config = config::PostConfig::from_file(config_path)?;
-    let html = render::render_file(content_path, assets_dir)?;
+    let html = render::render_file(content_path)?;
     let html_path = render::write_html(&html, out_dir)?;
     let computed_json = computed::build_computed_json(&post_config, &html);
     let json_path = computed::write_computed_json(&computed_json, out_dir)?;
