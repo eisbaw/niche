@@ -85,6 +85,31 @@ let
   linksJson = pkgs.writeText "links.json" (builtins.toJSON linksAttrs);
 
   # -------------------------------------------------------------------------
+  # Nav link validation: every nav URL must point to a known page
+  # -------------------------------------------------------------------------
+
+  nav = [
+    { label = "Home"; url = "/"; }
+    { label = "Archive"; url = "/archive/"; }
+    { label = "About"; url = "/posts/about/"; }
+  ];
+
+  # Build the set of all known page URLs.
+  knownUrls = [ "/" "/archive/" ]
+    ++ map (p: "/posts/${p.meta.slug}/") posts;
+
+  knownUrlSet = builtins.listToAttrs
+    (map (url: { name = url; value = true; }) knownUrls);
+
+  validateNavItem = item:
+    if knownUrlSet ? ${item.url}
+    then true
+    else builtins.throw
+      "Nav link '${item.label}' points to '${item.url}' which does not exist. Known pages: ${builtins.concatStringsSep ", " knownUrls}";
+
+  _navCheck = builtins.all (x: x) (map validateNavItem nav);
+
+  # -------------------------------------------------------------------------
   # Phase 2b: Collect compiled posts into a single directory tree
   # -------------------------------------------------------------------------
 
@@ -119,11 +144,7 @@ let
     base_url = "https://example.com";
     language = "en";
     posts_per_page = 10;
-    nav = [
-      { label = "Home"; url = "/"; }
-      { label = "Archive"; url = "/archive/"; }
-      { label = "About"; url = "/about/"; }
-    ];
+    inherit nav;
     feed = {
       enable = true;
       title = "Nixsite Blog";
@@ -155,6 +176,7 @@ let
   inherit (builtins) map;
 
 in
-  # Force the slug uniqueness check to evaluate.
+  # Force the slug uniqueness check and nav validation to evaluate.
   assert _slugCheck;
+  assert _navCheck;
   site

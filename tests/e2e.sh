@@ -61,6 +61,7 @@ check_file_exists "static/css/main.css" "CSS stylesheet"
 check_file_exists "posts/no-tags-post/index.html" "no-tags-post (TASK-0006.02)"
 check_file_exists "posts/unicode-test/index.html" "unicode-test post (TASK-0006.04)"
 check_file_exists "posts/broken-link-test/index.html" "broken-link-test post (TASK-0006.06)"
+check_file_exists "posts/about/index.html" "about page (TASK-0009)"
 
 echo ""
 echo "=== Checking content ==="
@@ -80,6 +81,14 @@ check_file_contains "index.html" "Nixsite Blog" \
 # Unicode title survives the pipeline
 check_file_contains "posts/unicode-test/index.html" "Ownership" \
     "unicode-test title contains 'Ownership'"
+
+# About page has expected content
+check_file_contains "posts/about/index.html" "Nix-native static site" \
+    "about page contains expected text (TASK-0009)"
+
+# Nav link to about page uses correct URL (slashes are HTML-encoded by the template engine)
+check_file_contains "index.html" "posts&#x2F;about" \
+    "nav contains link to about page (TASK-0009)"
 
 # Broken wiki-link gets broken-link class
 check_file_contains "posts/broken-link-test/index.html" "broken-link" \
