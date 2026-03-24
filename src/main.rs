@@ -27,6 +27,10 @@ enum Command {
         /// Output directory
         #[arg(long)]
         out: PathBuf,
+
+        /// Directory containing assets (e.g., SVG figures) to inline
+        #[arg(long)]
+        assets_dir: Option<PathBuf>,
     },
 
     /// Resolve inter-post links using a links registry
@@ -83,7 +87,8 @@ fn main() {
             config,
             content,
             out,
-        } => match run_render(config, content, out) {
+            assets_dir,
+        } => match run_render(config, content, out, assets_dir.as_deref()) {
             Ok((html_path, json_path)) => {
                 println!("{}", html_path.display());
                 println!("{}", json_path.display());

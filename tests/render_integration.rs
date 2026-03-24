@@ -39,8 +39,8 @@ fn full_pipeline_produces_content_html_and_computed_json() {
     let markdown = "# Hello\n\nThis is a test post with some words.";
 
     let (_tmp, config_path, content_path, out_dir) = setup_fixture(config_json, markdown);
-    let (html_path, json_path) =
-        post2html::run_render(&config_path, &content_path, &out_dir).expect("run_render failed");
+    let (html_path, json_path) = post2html::run_render(&config_path, &content_path, &out_dir, None)
+        .expect("run_render failed");
 
     assert!(html_path.exists(), "content.html should exist");
     assert!(json_path.exists(), "computed.json should exist");
@@ -54,7 +54,7 @@ fn full_pipeline_html_contains_rendered_markdown() {
     let markdown = "Hello **bold** world.";
 
     let (_tmp, config_path, content_path, out_dir) = setup_fixture(config_json, markdown);
-    post2html::run_render(&config_path, &content_path, &out_dir).unwrap();
+    post2html::run_render(&config_path, &content_path, &out_dir, None).unwrap();
 
     let html = fs::read_to_string(out_dir.join("content.html")).unwrap();
     assert!(
@@ -74,7 +74,7 @@ fn computed_json_word_count_and_reading_time() {
     let markdown = "one two three four five six seven eight nine ten";
 
     let (_tmp, config_path, content_path, out_dir) = setup_fixture(config_json, markdown);
-    post2html::run_render(&config_path, &content_path, &out_dir).unwrap();
+    post2html::run_render(&config_path, &content_path, &out_dir, None).unwrap();
 
     let json_str = fs::read_to_string(out_dir.join("computed.json")).unwrap();
     let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
@@ -94,7 +94,7 @@ fn computed_json_reading_time_rounds_up() {
     let markdown = words.join(" ");
 
     let (_tmp, config_path, content_path, out_dir) = setup_fixture(config_json, &markdown);
-    post2html::run_render(&config_path, &content_path, &out_dir).unwrap();
+    post2html::run_render(&config_path, &content_path, &out_dir, None).unwrap();
 
     let json_str = fs::read_to_string(out_dir.join("computed.json")).unwrap();
     let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
@@ -115,7 +115,7 @@ fn computed_json_preserves_extra_config_fields() {
     let markdown = "Some content.";
 
     let (_tmp, config_path, content_path, out_dir) = setup_fixture(config_json, markdown);
-    post2html::run_render(&config_path, &content_path, &out_dir).unwrap();
+    post2html::run_render(&config_path, &content_path, &out_dir, None).unwrap();
 
     let json_str = fs::read_to_string(out_dir.join("computed.json")).unwrap();
     let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
@@ -134,7 +134,7 @@ fn wikilinks_appear_as_placeholders_in_html() {
     let markdown = "See [[other-post]] for details and [[another|Another Page]] too.";
 
     let (_tmp, config_path, content_path, out_dir) = setup_fixture(config_json, markdown);
-    post2html::run_render(&config_path, &content_path, &out_dir).unwrap();
+    post2html::run_render(&config_path, &content_path, &out_dir, None).unwrap();
 
     let html = fs::read_to_string(out_dir.join("content.html")).unwrap();
 
@@ -154,7 +154,7 @@ fn wikilinks_inside_rendered_paragraphs() {
     let markdown = "Before [[link-target]] after.";
 
     let (_tmp, config_path, content_path, out_dir) = setup_fixture(config_json, markdown);
-    post2html::run_render(&config_path, &content_path, &out_dir).unwrap();
+    post2html::run_render(&config_path, &content_path, &out_dir, None).unwrap();
 
     let html = fs::read_to_string(out_dir.join("content.html")).unwrap();
 
@@ -209,7 +209,7 @@ fn missing_date_produces_error() {
 #[test]
 fn invalid_json_produces_parse_error() {
     let (_tmp, config_path, content_path, out_dir) = setup_fixture("not json{{{", "# Hi");
-    let result = post2html::run_render(&config_path, &content_path, &out_dir);
+    let result = post2html::run_render(&config_path, &content_path, &out_dir, None);
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(
@@ -227,6 +227,7 @@ fn missing_config_file_produces_read_error() {
         Path::new("/nonexistent/config.json"),
         &content_path,
         &tmp.path().join("out"),
+        None,
     );
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
@@ -246,6 +247,7 @@ fn missing_content_file_produces_read_error() {
         &config_path,
         Path::new("/nonexistent/content.md"),
         &tmp.path().join("out"),
+        None,
     );
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
@@ -269,7 +271,7 @@ fn special_characters_in_title_roundtrip_through_json() {
     let markdown = "Content here.";
 
     let (_tmp, config_path, content_path, out_dir) = setup_fixture(config_json, markdown);
-    post2html::run_render(&config_path, &content_path, &out_dir).unwrap();
+    post2html::run_render(&config_path, &content_path, &out_dir, None).unwrap();
 
     let json_str = fs::read_to_string(out_dir.join("computed.json")).unwrap();
     let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
@@ -296,7 +298,7 @@ fn unicode_in_title_preserved() {
     let markdown = "Content.";
 
     let (_tmp, config_path, content_path, out_dir) = setup_fixture(config_json, markdown);
-    post2html::run_render(&config_path, &content_path, &out_dir).unwrap();
+    post2html::run_render(&config_path, &content_path, &out_dir, None).unwrap();
 
     let json_str = fs::read_to_string(out_dir.join("computed.json")).unwrap();
     let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
@@ -318,7 +320,7 @@ fn title_with_angle_brackets() {
     let markdown = "Content.";
 
     let (_tmp, config_path, content_path, out_dir) = setup_fixture(config_json, markdown);
-    post2html::run_render(&config_path, &content_path, &out_dir).unwrap();
+    post2html::run_render(&config_path, &content_path, &out_dir, None).unwrap();
 
     let json_str = fs::read_to_string(out_dir.join("computed.json")).unwrap();
     let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
@@ -339,8 +341,8 @@ fn full_pipeline_with_project_fixtures() {
     let tmp = tempfile::tempdir().unwrap();
     let out_dir = tmp.path().join("out");
 
-    let (html_path, json_path) =
-        post2html::run_render(&config_path, &content_path, &out_dir).expect("run_render failed");
+    let (html_path, json_path) = post2html::run_render(&config_path, &content_path, &out_dir, None)
+        .expect("run_render failed");
 
     // Verify outputs exist
     assert!(html_path.exists());

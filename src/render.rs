@@ -10,6 +10,10 @@ use syntect::util::LinesWithEndings;
 static WIKILINK_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\[\[([^\[\]|]+?)(?:\|([^\[\]]+?))?\]\]").unwrap());
 
+/// Matches `<img src="...*.svg" alt="..." />` tags to inline SVG content.
+static SVG_IMG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"<p><img src="([^"]+\.svg)" alt="([^"]*)" />\s*</p>"#).unwrap());
+
 /// Matches `<pre><code class="language-XXX">...code...</code></pre>` blocks produced by comrak.
 /// Captures: (1) the language name, (2) the code content (HTML-encoded).
 static CODE_BLOCK_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -135,27 +139,34 @@ fn render_txt(content: &str) -> String {
 /// - `.html` -> passthrough (content is already HTML)
 /// - `.txt` -> wrapped in `<pre class="plaintext">`
 /// - Unknown -> error
-pub fn render_file(path: &Path) -> Result<String, RenderError> {
+pub fn render_file(path: &Path, assets_dir: Option<&Path>) -> Result<String, RenderError> {
     let format = detect_format(path)?;
+    let base_dir = assets_dir
+        .or_else(|| path.parent())
+        .unwrap_or(Path::new("."));
 
-    match format {
+    let html = match format {
         ContentFormat::Markdown => {
             let content = std::fs::read_to_string(path)
                 .map_err(|e| RenderError::ReadFailed(path.to_path_buf(), e))?;
-            Ok(render_markdown(&content))
+            render_markdown(&content)
         }
-        ContentFormat::Rst => render_rst(path),
+        ContentFormat::Rst => render_rst(path)?,
         ContentFormat::Html => {
             let content = std::fs::read_to_string(path)
                 .map_err(|e| RenderError::ReadFailed(path.to_path_buf(), e))?;
-            Ok(render_html_passthrough(&content))
+            render_html_passthrough(&content)
         }
         ContentFormat::Txt => {
             let content = std::fs::read_to_string(path)
                 .map_err(|e| RenderError::ReadFailed(path.to_path_buf(), e))?;
-            Ok(render_txt(&content))
+            render_txt(&content)
         }
-    }
+    };
+
+    // Inline any SVG images referenced relative to the assets directory
+    // (or content file's parent directory if no assets_dir specified).
+    Ok(inline_svgs(&html, base_dir))
 }
 
 /// Decode the basic HTML entities that comrak encodes inside `<code>` blocks.
@@ -244,6 +255,36 @@ fn replace_wikilinks(html: &str) -> String {
                 None => {
                     format!("<a class=\"wikilink\" data-slug=\"{escaped_slug}\">[[{slug}]]</a>")
                 }
+            }
+        })
+        .into_owned()
+}
+
+/// Inline SVG files referenced by `<img src="...svg">` tags.
+///
+/// Replaces `<p><img src="path.svg" alt="..." /></p>` with the raw SVG content
+/// wrapped in a `<figure>` with the alt text as `<figcaption>`.
+/// The `src` path is resolved relative to `base_dir`.
+/// If the SVG file doesn't exist, the `<img>` tag is left unchanged.
+fn inline_svgs(html: &str, base_dir: &Path) -> String {
+    SVG_IMG_RE
+        .replace_all(html, |caps: &regex::Captures| {
+            let src = &caps[1];
+            let alt = &caps[2];
+            let svg_path = base_dir.join(src);
+            match std::fs::read_to_string(&svg_path) {
+                Ok(svg_content) => {
+                    // Strip XML declaration if present
+                    let svg = if let Some(pos) = svg_content.find("<svg") {
+                        &svg_content[pos..]
+                    } else {
+                        &svg_content
+                    };
+                    format!(
+                        "<figure class=\"figure-svg\">\n{svg}\n<figcaption>{alt}</figcaption>\n</figure>"
+                    )
+                }
+                Err(_) => caps[0].to_string(), // Leave unchanged if file not found
             }
         })
         .into_owned()
@@ -371,7 +412,7 @@ mod tests {
 
     #[test]
     fn render_file_missing() {
-        let result = render_file(Path::new("/nonexistent/file.md"));
+        let result = render_file(Path::new("/nonexistent/file.md"), None);
         assert!(matches!(result, Err(RenderError::ReadFailed(_, _))));
     }
 
@@ -462,7 +503,7 @@ mod tests {
         let path = dir.path().join("page.html");
         std::fs::write(&path, "<p>Hello [[wiki]]</p>").unwrap();
 
-        let result = render_file(&path).unwrap();
+        let result = render_file(&path, None).unwrap();
         assert!(
             result.contains("<a class=\"wikilink\" data-slug=\"wiki\">[[wiki]]</a>"),
             "expected wikilink in HTML file, got: {result}"
@@ -521,7 +562,7 @@ mod tests {
         let path = dir.path().join("notes.txt");
         std::fs::write(&path, "Plain text content").unwrap();
 
-        let result = render_file(&path).unwrap();
+        let result = render_file(&path, None).unwrap();
         assert!(
             result.contains("<pre class=\"plaintext\">"),
             "expected pre wrapper from txt file, got: {result}"
@@ -586,7 +627,7 @@ mod tests {
         let path = dir.path().join("doc.rst");
         std::fs::write(&path, "Title\n=====\n\nA paragraph with [[wiki-link]].\n").unwrap();
 
-        let result = render_file(&path).unwrap();
+        let result = render_file(&path, None).unwrap();
         assert!(
             result.contains("<a class=\"wikilink\" data-slug=\"wiki-link\">"),
             "expected wikilink in RST output, got: {result}"
@@ -622,7 +663,7 @@ mod tests {
         let path = dir.path().join("doc.docx");
         std::fs::write(&path, "content").unwrap();
 
-        let err = render_file(&path).unwrap_err();
+        let err = render_file(&path, None).unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("unsupported content format: docx"),
