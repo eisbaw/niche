@@ -91,7 +91,8 @@ let
   nav = [
     { label = "Home"; url = "/"; }
     { label = "Archive"; url = "/archive/"; }
-    { label = "About"; url = "/posts/about/"; }
+    { label = "About Me"; url = "/posts/about-me/"; }
+    { label = "About Blog"; url = "/posts/about-blog/"; }
   ];
 
   # Build the set of all known page URLs.
