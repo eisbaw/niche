@@ -12,11 +12,11 @@
       # mkSite is the primary entry point for a per-instance flake:
       #   niche.lib.mkSite { pkgs; contentDir; siteConfig; themeDir ? ...; }
       lib.mkSite = args@{ pkgs, ... }:
-        if !(nixpkgs.lib.elem pkgs.system systems) then
-          throw "niche: unsupported system '${pkgs.system}'. Supported: ${nixpkgs.lib.concatStringsSep ", " systems}"
+        if !(nixpkgs.lib.elem pkgs.stdenv.hostPlatform.system systems) then
+          throw "niche: unsupported system '${pkgs.stdenv.hostPlatform.system}'. Supported: ${nixpkgs.lib.concatStringsSep ", " systems}"
         else
           import ./site.nix (args // {
-            post2html = self.packages.${pkgs.system}.post2html;
+            post2html = self.packages.${pkgs.stdenv.hostPlatform.system}.post2html;
           });
 
       packages = forAllSystems (system: {
