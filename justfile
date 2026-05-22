@@ -15,3 +15,7 @@ fmt:
 # Remove cargo artifacts
 clean:
     cargo clean
+
+# Engine smoke test (flake check on tests/fixtures/site)
+e2e:
+    bash tests/e2e.sh
