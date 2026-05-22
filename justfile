@@ -1,7 +1,6 @@
-# Run all recipes inside nix-shell
 set shell := ["nix-shell", "--run"]
 
-# Build the Rust binary (site.nix build will come later)
+# Build post2html
 build:
     cargo build
 
@@ -13,25 +12,6 @@ check:
 fmt:
     cargo fmt
 
-# Remove build artifacts
+# Remove cargo artifacts
 clean:
-    cargo clean && rm -f result
-
-# Serve the built site (requires result/ from nix-build)
-serve:
-    python3 -m http.server -d result/
-
-# Scaffold a new post: just new my-post-slug
-new slug:
-    mkdir -p content/{{slug}}
-    printf '{\n  title = "TODO";\n  date = "%s";\n  tags = [];\n}\n' "$(date +%Y-%m-%d)" > content/{{slug}}/meta.nix
-    touch content/{{slug}}/post.md
-    @echo "Created content/{{slug}}/"
-
-# Build the full site via Nix (compile + link + compose)
-site:
-    nix-build site.nix
-
-# End-to-end tests: build the site and verify output
-e2e:
-    bash tests/e2e.sh
+    cargo clean

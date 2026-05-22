@@ -11,9 +11,13 @@
     in {
       # mkSite is the primary entry point for a per-instance flake:
       #   niche.lib.mkSite { pkgs; contentDir; siteConfig; themeDir ? ...; }
-      lib.mkSite = args@{ pkgs, ... }: import ./site.nix (args // {
-        post2html = self.packages.${pkgs.system}.post2html;
-      });
+      lib.mkSite = args@{ pkgs, ... }:
+        if !(nixpkgs.lib.elem pkgs.system systems) then
+          throw "niche: unsupported system '${pkgs.system}'. Supported: ${nixpkgs.lib.concatStringsSep ", " systems}"
+        else
+          import ./site.nix (args // {
+            post2html = self.packages.${pkgs.system}.post2html;
+          });
 
       packages = forAllSystems (system: {
         post2html = (pkgsFor system).rustPlatform.buildRustPackage {
