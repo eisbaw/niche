@@ -251,6 +251,13 @@ pub fn run_compose(
     let tags_value =
         serde_json::to_value(&tags_map).expect("tags map serialization should not fail");
 
+    // `posts_index`: metadata-only summary of every post (no body content),
+    // exposed in every page's Tera context so sidebar-style themes can list
+    // all posts on every page. Distinct from `posts`, which means "the posts
+    // visible on *this* page" (a paginated/filtered subset) in templates
+    // that have it (index.html, tag.html, feed.xml).
+    let posts_index_value: Vec<&Value> = posts.iter().map(|p| &p.metadata).collect();
+
     // --- Render individual post pages ---
     for post in &posts {
         let slug = &post.slug;
@@ -264,6 +271,7 @@ pub fn run_compose(
         context.insert("site", &site_value);
         context.insert("current_url", &current_url);
         context.insert("tags", &tags_value);
+        context.insert("posts_index", &posts_index_value);
 
         // Build post context: metadata fields + content.
         let mut post_value = post.metadata.clone();
@@ -335,6 +343,7 @@ pub fn run_compose(
             context.insert("posts", &page_posts);
             context.insert("pagination", &pagination);
             context.insert("tags", &tags_value);
+            context.insert("posts_index", &posts_index_value);
 
             let rendered = tera.render("index.html", &context)?;
 
@@ -373,6 +382,7 @@ pub fn run_compose(
         context.insert("tag_slug", &tag_slug);
         context.insert("posts", &tag_post_values);
         context.insert("tags", &tags_value);
+        context.insert("posts_index", &posts_index_value);
 
         let rendered = tera.render("tag.html", &context)?;
         let index_path = tag_dir.join("index.html");
@@ -408,6 +418,7 @@ pub fn run_compose(
         context.insert("current_url", &current_url);
         context.insert("years", &years_value);
         context.insert("tags", &tags_value);
+        context.insert("posts_index", &posts_index_value);
 
         let rendered = tera.render("archive.html", &context)?;
         let index_path = archive_dir.join("index.html");
@@ -722,6 +733,9 @@ mod tests {
   <time>{{ post.date }}</time>
   <div>{{ post.content | safe }}</div>
 </article>
+<!-- posts_index marker for regression test:
+{% for p in posts_index %}[{{ p.slug }}]{% endfor %}
+-->
 {% endblock %}"#,
         )
         .unwrap();
@@ -897,6 +911,33 @@ mod tests {
             post2.contains("Second Post"),
             "second post should contain title"
         );
+    }
+
+    /// `posts_index` must be available in every page's Tera context so that
+    /// sidebar-style themes can list every post on every page. Regression
+    /// guard: if a refactor stops inserting it on any of the four render
+    /// sites (post/index/tag/archive), themes that rely on it would silently
+    /// produce empty sidebars.
+    #[test]
+    fn posts_index_available_on_every_page_kind() {
+        let (_tmp, config, posts_dir, templates, static_dir, out) = setup_fixture();
+        run_compose(&config, &posts_dir, &templates, &static_dir, &out).unwrap();
+
+        // The post.html template embeds: `[first-post][second-post]` (or in
+        // whatever sort order compose produces). Both slugs must appear in
+        // both post pages' markers.
+        for slug in &["first-post", "second-post"] {
+            let page = std::fs::read_to_string(out.join(format!("posts/{slug}/index.html")))
+                .unwrap_or_else(|e| panic!("read {slug} page: {e}"));
+            assert!(
+                page.contains("[first-post]"),
+                "{slug} page missing first-post in posts_index marker:\n{page}"
+            );
+            assert!(
+                page.contains("[second-post]"),
+                "{slug} page missing second-post in posts_index marker:\n{page}"
+            );
+        }
     }
 
     #[test]
