@@ -1,76 +1,139 @@
-# the reference CMS
+# niche
 
-A Nix-native static site generator. Content is authored as Markdown with Nix
-attribute sets for metadata. The build pipeline is fully reproducible via
-`nix-build`.
+A Nix-native static site engine. Posts authored in Markdown / RST / HTML /
+plain text, metadata as Nix attribute sets, build orchestrated by a flake
+that wraps a small Rust binary (`post2html`).
+
+niche is the **engine**. To run a site you also need an **instance** —
+a separate flake that holds your content and calls `niche.lib.mkSite`.
+The reference instance lives at
+[`example-instance`](../example-instance) (sibling repo).
 
 ## Prerequisites
 
-- [Nix](https://nixos.org/download/) (provides Rust toolchain, just, and all
-  dependencies via `shell.nix`)
+- [Nix](https://nixos.org/download/) with flakes enabled
+  (`experimental-features = nix-command flakes` in `nix.conf`).
 
-## Quickstart
+## Public API
 
-```sh
-# Build the site (output lands in result/)
-nix-build site.nix
+The flake exposes one function and one package:
 
-# Serve locally
-nix-shell --run "just serve"
+```nix
+# flake.nix
+lib.mkSite = { pkgs, contentDir, siteConfig, themeDir ? <niche>/themes/default }: derivation;
+packages.<system>.post2html = derivation;   # the renderer binary
+devShells.<system>.default  = derivation;   # rust + docutils + just
+checks.<system>.e2e         = derivation;   # smoke-builds tests/fixtures/site
 ```
 
-## Adding a post
+### `lib.mkSite` arguments
 
-```sh
-nix-shell --run "just new my-post-slug"
-```
+| arg | type | meaning |
+|---|---|---|
+| `pkgs`        | nixpkgs attrset    | Provides the build environment. niche reads `pkgs.system` from `pkgs.stdenv.hostPlatform.system` to select a matching `post2html` build. |
+| `contentDir`  | path               | Directory whose subdirs are posts. Each subdir needs a `meta.nix` and one of `post.{md,rst,html,txt}`. |
+| `siteConfig`  | attrset            | Serialized to JSON and consumed by the renderer (see schema below). |
+| `themeDir`    | path *(optional)*  | Theme root with `templates/` (Tera) and `static/` (CSS, fonts). Defaults to the engine's bundled theme. |
 
-This creates `content/my-post-slug/` with a `meta.nix` template and empty
-`post.md`. Edit both files, then rebuild with `nix-build site.nix`.
-
-### meta.nix format
+### `siteConfig` schema
 
 ```nix
 {
-  slug = "my-post-slug";
-  title = "My Post Title";
-  date = "2024-03-15";
-  tags = [ "topic" ];           # optional
-  summary = "Short description"; # optional
-  authors = [ "name" ];          # optional
+  site_name       = "string";
+  base_url        = "string";   # no trailing slash
+  language        = "string";   # e.g. "en"
+  posts_per_page  = 10;
+  nav = [
+    { label = "Home";    url = "/"; }
+    { label = "Archive"; url = "/archive/"; }
+    { label = "About";   url = "/posts/about/"; }
+    # set external=true to skip URL validation (outbound, anchors, ...)
+    { label = "Source";  url = "https://git.example/me"; external = true; }
+  ];
+  feed = { enable = true; title = "..."; description = "..."; };
+  author = { name = "..."; email = "..."; };
 }
 ```
 
-### Content formats
+Nav URLs are validated against discovered pages (`"/"`, `"/archive/"`,
+and `/posts/<slug>/` for every post in `contentDir`). Items with
+`external = true;` skip the check.
 
-The content file can be `post.md` (Markdown), `post.rst` (reStructuredText),
-`post.html` (passthrough), or `post.txt` (plain text wrapped in `<pre>`).
+### `meta.nix` per post
 
-Wiki-links are supported: `[[other-slug]]` links to another post by slug.
-
-## Directory structure
-
+```nix
+{
+  slug    = "my-post-slug";
+  title   = "My Post Title";
+  date    = "2026-01-15";
+  tags    = [ "topic" ];          # optional
+  summary = "Short description";  # optional
+  authors = [ "name" ];           # optional
+}
 ```
-content/          Post source directories (one per post)
-  hello-world/
-    meta.nix      Post metadata
-    post.md       Post content
-    assets/       Optional static assets copied alongside the post
-lib/              Shared Nix functions (mkPost.nix)
-src/              Rust source for the post2html binary
-themes/default/   Templates (Tera) and static assets (CSS, fonts)
-tests/            Integration tests and e2e test script
-site.nix          Top-level build: compile -> link -> compose
-shell.nix         Nix development shell
-justfile          Common development commands
+
+Wiki-links: `[[other-slug]]` in any content format renders as an
+anchor whose `href` is resolved at link phase. Unresolved slugs render
+as `<a class="wikilink broken-link" data-slug="...">` so they're
+visually distinguishable from working links.
+
+## Minimal instance flake
+
+```nix
+{
+  inputs.niche.url = "git+file:///path/to/niche";
+  inputs.nixpkgs.follows = "niche/nixpkgs";
+
+  outputs = { self, niche, nixpkgs }:
+    let
+      system = "x86_64-linux";
+      pkgs = nixpkgs.legacyPackages.${system};
+    in {
+      packages.${system}.default = niche.lib.mkSite {
+        inherit pkgs;
+        contentDir = ./content;
+        siteConfig = import ./site-config.nix;
+      };
+    };
+}
 ```
+
+See `../example-instance/instances/main/flake.nix` for a complete example
+that supports multiple systems.
+
+## Self-test
+
+```sh
+just e2e         # runs nix flake check
+nix flake check  # equivalent
+```
+
+Builds the fixture site under `tests/fixtures/site` and asserts on
+file existence, wiki-link resolution across content formats,
+broken-link rendering, feed content, and the external-nav opt-out path.
 
 ## Development
 
 ```sh
-nix-shell
-just check        # clippy + tests
-just fmt          # format Rust source
-just e2e          # full end-to-end test
-just site         # build via nix-build site.nix
+nix develop      # or: nix-shell
+just check       # cargo clippy -D warnings && cargo test
+just fmt         # cargo fmt
+just build       # cargo build
+```
+
+The Rust binary lives under `src/`; Nix orchestration under
+`lib/` and `site.nix`. The bundled theme is at `themes/default/`.
+
+## Repository layout
+
+```
+src/              Rust source for the post2html binary
+lib/              Shared Nix functions (mkPost.nix, resolveContent.nix)
+themes/default/   Bundled theme: Tera templates + static assets
+tests/            cargo integration tests + fixture site for flake e2e
+site.nix          Build pipeline (compile → link → compose)
+flake.nix         Public API: lib.mkSite, packages, devShells, checks
+shell.nix         Dev shell (also re-exported as devShells.default)
+PRD.md            Original design doc (historical; pre-split)
+the reference CMS/          Reference submodule to upstream the reference CMS (inspiration)
 ```

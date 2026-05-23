@@ -1,5 +1,13 @@
 # PRD: A Nix-Native Static Site Generator
 
+> **Historical design document.** Written when this lived as a monorepo
+> together with an instance's `content/`. The repo has since been split:
+> engine (this repo) exposes `lib.mkSite` via `flake.nix`; instances pin
+> niche and supply their own content. Some path references and workflow
+> steps in this doc no longer match the current layout — treat it as
+> design rationale, not as a current operations manual. The current API
+> contract is in [`README.md`](./README.md).
+
 ## Vision
 
 A static site generator inspired by the reference CMS's clean aesthetics, but rebuilt from scratch around Nix as the orchestration and composition layer and Rust as a nix-agnostic content processing engine.
