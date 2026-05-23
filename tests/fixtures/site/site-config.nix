@@ -7,6 +7,8 @@
   nav = [
     { label = "Home"; url = "/"; }
     { label = "Archive"; url = "/archive/"; }
+    # external opt-out: exercises the validateNavItem fallthrough
+    { label = "Source"; url = "https://example.test/source"; external = true; }
   ];
 
   feed = {

@@ -19,7 +19,10 @@
 #   base_url       string
 #   language       string
 #   posts_per_page int
-#   nav            [ { label; url; } ]   — validated against discovered URLs
+#   nav            [ { label; url; external ? false; } ]
+#                  Items default to validated: url must be "/", "/archive/",
+#                  or "/posts/<known-slug>/". Set external=true to opt out
+#                  (outbound links, anchors, tag indexes, etc.).
 #   feed           { enable; title; description; }
 #   author         { name; email; }
 
@@ -61,7 +64,10 @@ let
   linksJson = pkgs.writeText "links.json" (builtins.toJSON linksAttrs);
 
   # -------------------------------------------------------------------------
-  # Nav link validation: every nav URL must resolve to a known page
+  # Nav link validation: nav URLs that target this site's known pages
+  # must resolve. Items marked `external = true;` opt out (for outbound
+  # links, anchors, tag indexes, or anything outside the engine's
+  # routing convention).
   # -------------------------------------------------------------------------
 
   nav = siteConfig.nav or [];
@@ -73,10 +79,10 @@ let
     (map (url: { name = url; value = true; }) knownUrls);
 
   validateNavItem = item:
-    if knownUrlSet ? ${item.url}
-    then true
+    if (item.external or false) then true
+    else if knownUrlSet ? ${item.url} then true
     else builtins.throw
-      "Nav link '${item.label}' points to '${item.url}' which does not exist. Known pages: ${builtins.concatStringsSep ", " knownUrls}";
+      "Nav link '${item.label}' points to '${item.url}' which is not a known page. Set `external = true;` if this is intentional, or fix the URL. Known pages: ${builtins.concatStringsSep ", " knownUrls}";
 
   _navCheck = builtins.all (x: x) (map validateNavItem nav);
 

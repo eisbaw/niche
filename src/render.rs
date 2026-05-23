@@ -77,19 +77,13 @@ pub fn render_markdown(markdown: &str) -> String {
 /// `<body>` content (stripping the full HTML document wrapper).
 /// Wiki-link replacement is applied to the output.
 fn render_rst(path: &Path) -> Result<String, RenderError> {
-    // Check that rst2html5 is on PATH before attempting to run it.
-    let which = std::process::Command::new("which")
-        .arg("rst2html5")
-        .output();
-    match which {
-        Ok(output) if output.status.success() => {}
-        _ => return Err(RenderError::Rst2HtmlNotFound),
-    }
-
-    let output = std::process::Command::new("rst2html5")
-        .arg(path)
-        .output()
-        .map_err(|e| RenderError::RstFailed(format!("failed to execute rst2html5: {e}")))?;
+    let output = match std::process::Command::new("rst2html5").arg(path).output() {
+        Ok(out) => out,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(RenderError::Rst2HtmlNotFound)
+        }
+        Err(e) => return Err(RenderError::RstFailed(format!("failed to execute rst2html5: {e}"))),
+    };
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

@@ -55,17 +55,45 @@
           e2e = pkgs.runCommand "niche-e2e" {} ''
             set -e
             site=${fixtureSite}
+
+            # All four content formats land in the output. Catches the
+            # high-leverage regression where compose silently restricts
+            # its post glob to *.md.
             for f in index.html feed.xml archive/index.html \
                      posts/hello-world/index.html \
                      posts/second-post/index.html \
+                     posts/rst-post/index.html \
+                     posts/html-post/index.html \
+                     posts/broken-link-post/index.html \
                      static/css/main.css; do
               test -f "$site/$f" || { echo "missing: $f"; exit 1; }
             done
-            # Wiki-link resolved both directions
-            grep -q "/posts/second-post/" "$site/posts/hello-world/index.html"
-            grep -q "/posts/hello-world/" "$site/posts/second-post/index.html"
-            # Site name from site-config.nix made it into the chrome
+
+            # Wiki-link resolved in both directions and across formats.
+            grep -q '/posts/second-post/' "$site/posts/hello-world/index.html"
+            grep -q '/posts/hello-world/' "$site/posts/second-post/index.html"
+            grep -q '/posts/hello-world/' "$site/posts/rst-post/index.html"
+            grep -q '/posts/hello-world/' "$site/posts/html-post/index.html"
+
+            # HTML passthrough survived render and compose.
+            grep -q 'data-marker="html-passthrough"' "$site/posts/html-post/index.html"
+
+            # Broken wiki-link tagged as broken-link, not silently dropped.
+            grep -q 'class="wikilink broken-link"' "$site/posts/broken-link-post/index.html"
+
+            # Site config made it into HTML chrome.
             grep -q "Niche Test Site" "$site/index.html"
+
+            # Feed has real <entry> elements with the right ids/links,
+            # not a malformed empty feed.
+            grep -q '<entry>' "$site/feed.xml"
+            grep -q '<id>https://example.test/posts/hello-world/</id>' "$site/feed.xml"
+            grep -q '<id>https://example.test/posts/second-post/</id>' "$site/feed.xml"
+
+            # external=true nav item kept (validates the opt-out path).
+            # URL slashes are HTML-entity-encoded by Tera, so match on label.
+            grep -q '>Source</a>' "$site/index.html"
+
             touch $out
           '';
         });

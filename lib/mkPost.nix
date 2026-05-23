@@ -26,11 +26,17 @@ let
   hasFigures = builtins.pathExists (postDir + "/figures.nix");
   figures = if hasFigures then import (postDir + "/figures.nix") { inherit pkgs; } else null;
 
+  # RST posts shell out to rst2html5; pull docutils into the per-post
+  # build env only when actually needed.
+  isRst = pkgs.lib.hasSuffix ".rst" (toString contentFile);
+
 in
 {
   inherit meta;
 
-  compiled = pkgs.runCommand "post-${meta.slug}" {} ''
+  compiled = pkgs.runCommand "post-${meta.slug}" {
+    nativeBuildInputs = pkgs.lib.optional isRst pkgs.python3Packages.docutils;
+  } ''
     mkdir -p $out
     ${post2html}/bin/post2html render \
       --config ${configFile} \
