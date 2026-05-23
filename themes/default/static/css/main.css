@@ -162,6 +162,18 @@ html {
   color: var(--color-text);
 }
 
+@media (max-width: 600px) {
+  .site-nav {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-sm);
+  }
+  .site-nav ul {
+    flex-wrap: wrap;
+    gap: var(--space-md);
+  }
+}
+
 /* === Typography === */
 h1, h2, h3, h4, h5, h6 {
   line-height: var(--line-height-heading);

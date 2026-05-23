@@ -16,7 +16,11 @@ static CODE_BLOCK_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?s)<pre><code class="language-([^"]+)">(.*?)</code></pre>"#).unwrap()
 });
 
-static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
+// two-face bundles a curated extra syntax set (maintained by the bat
+// project) on top of syntect's defaults. Crucially, it includes Nix,
+// TOML, TypeScript, and Dockerfile — none of which ship in
+// SyntaxSet::load_defaults_newlines.
+static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
 /// Regex to extract the content between `<body>` and `</body>` tags.
 /// Used to strip the full HTML document wrapper produced by rst2html5.
@@ -151,7 +155,28 @@ pub fn render_file(path: &Path) -> Result<String, RenderError> {
         }
     };
 
-    Ok(html)
+    // The site template provides the post's H1 (the title). Demote
+    // headings inside the post body by one level so the document has
+    // exactly one H1 and the heading hierarchy stays coherent.
+    Ok(demote_headings(&html))
+}
+
+/// Demote every H1-H5 element by one level (H1→H2, …, H5→H6).
+/// Processed in reverse so an h2 isn't re-demoted after h1→h2.
+/// H6 elements are left at H6 (HTML has no h7).
+fn demote_headings(html: &str) -> String {
+    let mut out = html.to_string();
+    for level in (1..=5).rev() {
+        let next = level + 1;
+        let re = Regex::new(&format!(
+            r"(?si)<h{level}(\s[^>]*)?>(.*?)</h{level}>"
+        ))
+        .unwrap();
+        out = re
+            .replace_all(&out, format!("<h{next}$1>$2</h{next}>"))
+            .into_owned();
+    }
+    out
 }
 
 /// Decode the basic HTML entities that comrak encodes inside `<code>` blocks.
@@ -740,5 +765,35 @@ mod tests {
             !html.contains("<span class="),
             "should not contain highlighted spans for inline code, got: {html}"
         );
+    }
+
+    // --- heading demotion tests ---
+
+    #[test]
+    fn demote_shifts_each_level_down_by_one() {
+        let input = "<h1>A</h1><h2>B</h2><h3>C</h3><h5>E</h5>";
+        let out = demote_headings(input);
+        assert_eq!(out, "<h2>A</h2><h3>B</h3><h4>C</h4><h6>E</h6>");
+    }
+
+    #[test]
+    fn demote_preserves_attributes() {
+        let input = r#"<h1 id="foo" class="bar">Title</h1>"#;
+        let out = demote_headings(input);
+        assert_eq!(out, r#"<h2 id="foo" class="bar">Title</h2>"#);
+    }
+
+    #[test]
+    fn demote_h6_stays_h6() {
+        let input = "<h6>deepest</h6>";
+        assert_eq!(demote_headings(input), "<h6>deepest</h6>");
+    }
+
+    #[test]
+    fn demote_doesnt_run_twice_on_h2_originally_from_h1() {
+        // Reverse-order processing means an h2 produced from h1 is NOT
+        // visited again when the h2-pass runs (it already happened).
+        let input = "<h1>x</h1><h2>y</h2>";
+        assert_eq!(demote_headings(input), "<h2>x</h2><h3>y</h3>");
     }
 }

@@ -348,7 +348,11 @@ fn full_pipeline_with_project_fixtures() {
 
     // Verify HTML has expected features
     let html = fs::read_to_string(&html_path).unwrap();
-    assert!(html.contains("<h1"), "expected h1 heading");
+    // render_file demotes headings by one (the template owns the page H1).
+    // The fixture's `# Hello World` becomes <h2>, its `## Table` becomes <h3>.
+    assert!(!html.contains("<h1"), "post body should not emit h1 after demote");
+    assert!(html.contains("<h2"), "expected demoted top heading");
+    assert!(html.contains("<h3"), "expected demoted second-level heading");
     assert!(html.contains("<table>"), "expected GFM table");
     assert!(html.contains("<del>"), "expected strikethrough");
     assert!(

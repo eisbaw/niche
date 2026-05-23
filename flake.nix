@@ -94,6 +94,14 @@
             # URL slashes are HTML-entity-encoded by Tera, so match on label.
             grep -q '>Source</a>' "$site/index.html"
 
+            # Heading demotion: each post page has exactly one <h1>
+            # (the template-provided title). Post body content is h2+.
+            for slug in hello-world second-post rst-post html-post broken-link-post; do
+              h1_count=$(grep -oE '<h1\b' "$site/posts/$slug/index.html" | wc -l)
+              test "$h1_count" -eq 1 \
+                || { echo "$slug has $h1_count h1 elements, expected 1"; exit 1; }
+            done
+
             touch $out
           '';
         });
