@@ -20,7 +20,7 @@ The flake exposes one function and one package:
 
 ```nix
 # flake.nix
-lib.mkSite = { pkgs, contentDir, siteConfig, themeDir ? <niche>/themes/default }: derivation;
+lib.mkSite = { pkgs, contentDir, siteConfig, themeDir ? <niche>/themes/fancy-sidebar }: derivation;
 packages.<system>.post2html = derivation;   # the renderer binary
 devShells.<system>.default  = derivation;   # rust + docutils + just
 checks.<system>.e2e         = derivation;   # smoke-builds tests/fixtures/site
@@ -33,7 +33,7 @@ checks.<system>.e2e         = derivation;   # smoke-builds tests/fixtures/site
 | `pkgs`        | nixpkgs attrset    | Provides the build environment. niche reads `pkgs.system` from `pkgs.stdenv.hostPlatform.system` to select a matching `post2html` build. |
 | `contentDir`  | path               | Directory whose subdirs are posts. Each subdir needs a `meta.nix` and one of `post.{md,rst,html,txt}`. |
 | `siteConfig`  | attrset            | Serialized to JSON and consumed by the renderer (see schema below). |
-| `themeDir`    | path *(optional)*  | Theme root with `templates/` (Tera) and `static/` (CSS, fonts). Defaults to the engine's bundled theme. |
+| `themeDir`    | path *(optional)*  | Theme root with `templates/` (Tera) and `static/` (CSS, fonts). Defaults to the bundled `fancy-sidebar` theme; `plain` is also bundled. |
 
 ### `siteConfig` schema
 
@@ -122,14 +122,15 @@ just build       # cargo build
 ```
 
 The Rust binary lives under `src/`; Nix orchestration under
-`lib/` and `site.nix`. The bundled theme is at `themes/default/`.
+`lib/` and `site.nix`. Two themes ship under `themes/`: `fancy-sidebar`
+(the default) and `plain`.
 
 ## Repository layout
 
 ```
 src/              Rust source for the post2html binary
 lib/              Shared Nix functions (mkPost.nix, resolveContent.nix)
-themes/default/   Bundled theme: Tera templates + static assets
+themes/           Bundled themes: fancy-sidebar (default), plain
 tests/            cargo integration tests + fixture site for flake e2e
 site.nix          Build pipeline (compile → link → compose)
 flake.nix         Public API: lib.mkSite, packages, devShells, checks

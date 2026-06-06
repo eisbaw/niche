@@ -102,6 +102,14 @@
                 || { echo "$slug has $h1_count h1 elements, expected 1"; exit 1; }
             done
 
+            # The default theme is fancy-sidebar. The assertions above are
+            # theme-agnostic, so without these a regression that breaks the
+            # default theme's defining chrome (the post sidebar + the
+            # dark-mode toggle) would still ship green.
+            grep -q 'class="sidebar"' "$site/index.html"
+            grep -q 'theme-toggle' "$site/index.html"
+            grep -q 'class="sidebar"' "$site/posts/hello-world/index.html"
+
             touch $out
           '';
         });

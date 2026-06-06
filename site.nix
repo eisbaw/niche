@@ -11,7 +11,7 @@
 , post2html       # the pre-built post2html derivation
 , contentDir      # path: directory of post-* subdirs, each with meta.nix
 , siteConfig      # attrset serialized to site-config.json (see schema below)
-, themeDir ? ./themes/default
+, themeDir ? ./themes/fancy-sidebar
 }:
 
 # siteConfig schema:
