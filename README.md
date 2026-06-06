@@ -135,5 +135,4 @@ site.nix          Build pipeline (compile → link → compose)
 flake.nix         Public API: lib.mkSite, packages, devShells, checks
 shell.nix         Dev shell (also re-exported as devShells.default)
 PRD.md            Original design doc (historical; pre-split)
-the reference CMS/          Reference submodule to upstream the reference CMS (inspiration)
 ```
