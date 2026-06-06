@@ -5,9 +5,8 @@ plain text, metadata as Nix attribute sets, build orchestrated by a flake
 that wraps a small Rust binary (`post2html`).
 
 niche is the **engine**. To run a site you also need an **instance** —
-a separate flake that holds your content and calls `niche.lib.mkSite`.
-The reference instance lives at
-[`example-instance`](../example-instance) (sibling repo).
+a separate flake that holds your content and calls `niche.lib.mkSite`
+(see the minimal example under [Public API](#public-api) below).
 
 ## Prerequisites
 
@@ -98,8 +97,9 @@ visually distinguishable from working links.
 }
 ```
 
-See `../example-instance/instances/main/flake.nix` for a complete example
-that supports multiple systems.
+The example above is intentionally minimal; an instance flake can also
+iterate over several systems (e.g. with `nixpkgs.lib.genAttrs`) and pin
+the engine via its public git remote (`niche.url = "github:OWNER/niche"`).
 
 ## Self-test
 
