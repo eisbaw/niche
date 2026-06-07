@@ -10,7 +10,7 @@
 
 ## Vision
 
-A static site generator inspired by the reference CMS's clean aesthetics, but rebuilt from scratch around Nix as the orchestration and composition layer and Rust as a nix-agnostic content processing engine.
+A static site generator with clean, minimal aesthetics, built from scratch around Nix as the orchestration and composition layer and Rust as a nix-agnostic content processing engine.
 
 No dynamic serving. No admin dashboard. No database. No custom config language. Nix is the config language.
 
@@ -502,7 +502,7 @@ post.word_count, post.reading_time_minutes            — computed by render
 
 ### Design Specification (Default Theme)
 
-Concrete values derived from the reference CMS's styling, adapted for a static blog.
+Concrete values for a clean, minimal static blog.
 
 #### Design Tokens (CSS Custom Properties)
 
@@ -577,7 +577,7 @@ Concrete values derived from the reference CMS's styling, adapted for a static b
 
 #### Supported Content Elements
 
-We support a blog-relevant subset of the reference CMS's block types. The `render` subcommand converts Markdown/RST into HTML using these elements:
+We support a blog-relevant set of block types. The `render` subcommand converts Markdown/RST into HTML using these elements:
 
 | Element | HTML output from `render` | CSS class |
 |---------|--------------------------|-----------|
@@ -1048,7 +1048,7 @@ e2e         # end-to-end test: nix-build sample site, diff against expected outp
 
 ### M5 — Theme and Polish
 
-- Default theme with bespoke aesthetics
+- Default theme with clean, minimal aesthetics
 - Typography (Inter + JetBrains Mono, self-hosted)
 - Dark mode (`prefers-color-scheme`)
 - Responsive layout
@@ -1072,6 +1072,6 @@ e2e         # end-to-end test: nix-build sample site, diff against expected outp
 
 ## Constraints
 
-- The upstream the reference CMS project is under the O'Saasy License. We are not copying code — we are building a new system inspired by its content model and aesthetics. Our code will be independently licensed.
+- This is an original implementation; its code is independently licensed.
 - RST support depends on Python's `docutils` being available on `$PATH`. The Rust binary does not bundle it.
 - Nix evaluation adds latency to the first build. Subsequent builds benefit from the Nix store cache — unchanged posts are not rebuilt.
